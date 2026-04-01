@@ -435,7 +435,7 @@ export default function PesartiBoard() {
   const [sidebarFilter, setSidebarFilter] = useState<string | null>(null);
   const [selectedUserReport, setSelectedUserReport] = useState<string | null>(null);
   const [globalChatOpen, setGlobalChatOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'board' | 'meetings' | 'agenda' | 'orders' | 'calendar' | 'brainstorm'>('board');
+  const [activeTab, setActiveTab] = useState<'board' | 'meetings' | 'agenda' | 'orders' | 'calendar' | 'brainstorm' | 'financeiro'>('board');
   const [meetingModalOpen, setMeetingModalOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
