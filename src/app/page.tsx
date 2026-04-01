@@ -49,7 +49,8 @@ import {
   Edit3,
   Sparkles,
   Loader2,
-  Key
+  Key,
+  ExternalLink
 } from "lucide-react";
 import Link from "next/link";
 import { GoogleGenerativeAI } from "@google/generative-ai";
