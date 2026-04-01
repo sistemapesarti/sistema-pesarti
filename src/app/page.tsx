@@ -77,7 +77,7 @@ interface User {
   role: string;
 }
 
-interface ChatMessage {
+interface BoardChatMessage {
   id: string;
   userId: string;
   text: string;
@@ -96,7 +96,7 @@ interface SubCard {
   startDate: string;
   dueDate: string;
   progress: number;
-  comments: ChatMessage[];
+  comments: BoardChatMessage[];
   assignedTo: string;
   pautas?: { id: string; text: string }[];
   attachments?: string[];
@@ -441,7 +441,7 @@ export default function PesartiBoard() {
   const [statusModalOpen, setStatusModalOpen] = useState(false);
   const [agendaItems, setAgendaItems] = useState<AgendaItem[]>([]);
   const [siteOrders, setSiteOrders] = useState<SiteOrder[]>([]);
-  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+  const [chatMessages, setChatMessages] = useState<BoardChatMessage[]>([
     { id: "msg1", userId: "u1", text: "Bem-vindos à nova Pesarti Board!", timestamp: "09:00" }
   ]);
   const [datedBoards, setDatedBoards] = useState<Record<string, Topic>>({});
@@ -2214,7 +2214,7 @@ function CategorySelectorModal({ onSelect, onClose }: { onSelect: (template: { t
   );
 }
 
-function GlobalChatPanel({ messages, onSendMessage, onClose }: { messages: ChatMessage[], onSendMessage: (t: string) => void, onClose: () => void }) {
+function GlobalChatPanel({ messages, onSendMessage, onClose }: { messages: BoardChatMessage[], onSendMessage: (t: string) => void, onClose: () => void }) {
   const [val, setVal] = useState("");
   return (
     <motion.div
