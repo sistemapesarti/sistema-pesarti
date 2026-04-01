@@ -435,7 +435,7 @@ export default function PesartiBoard() {
   const [sidebarFilter, setSidebarFilter] = useState<string | null>(null);
   const [selectedUserReport, setSelectedUserReport] = useState<string | null>(null);
   const [globalChatOpen, setGlobalChatOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'board' | 'meetings' | 'agenda' | 'orders' | 'calendar' | 'brainstorm' | 'financeiro'>('board');
+  const [activeTab, setActiveTab] = useState<'board' | 'meetings' | 'agenda' | 'orders' | 'calendar' | 'brainstorm' | 'financeiro' | 'lembretes'>('board');
   const [meetingModalOpen, setMeetingModalOpen] = useState(false);
   const [categoryModalOpen, setCategoryModalOpen] = useState(false);
   const [statusModalOpen, setStatusModalOpen] = useState(false);
@@ -1218,7 +1218,7 @@ export default function PesartiBoard() {
 
 // --- COMPONENTES AUXILIARES ---
 
-function Sidebar({ categories, activeFilter, onSelectFilter, activeTab, onSelectTab, mode, onToggleMode, userRole }: { categories: Category[], activeFilter: string | null, onSelectFilter: (f: string | null) => void, activeTab: string, onSelectTab: (t: 'board' | 'meetings' | 'orders' | 'calendar' | 'brainstorm' | 'financeiro' | 'lembretes') => void, mode: 'expanded' | 'collapsed' | 'hidden', onToggleMode: (m: 'expanded' | 'collapsed' | 'hidden') => void, userRole?: string }) {
+function Sidebar({ categories, activeFilter, onSelectFilter, activeTab, onSelectTab, mode, onToggleMode, userRole }: { categories: Category[], activeFilter: string | null, onSelectFilter: (f: string | null) => void, activeTab: string, onSelectTab: (t: 'board' | 'meetings' | 'agenda' | 'orders' | 'calendar' | 'brainstorm' | 'financeiro' | 'lembretes') => void, mode: 'expanded' | 'collapsed' | 'hidden', onToggleMode: (m: 'expanded' | 'collapsed' | 'hidden') => void, userRole?: string }) {
   const baseItems = [
     { id: null, icon: LayoutDashboard, label: "Home", type: 'filter' as const },
   ];
