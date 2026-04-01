@@ -150,11 +150,23 @@ interface AgendaItem {
 
 interface SiteOrder {
   id: string;
-  customerName: string;
-  date: string;
-  deadline: string;
-  piece: string;
-  status: 'pending' | 'embroidery' | 'shipped' | 'delivered';
+  title: string;
+  customer: string;
+  status: string;
+  dueDate: string;
+  attachments?: string[];
+  notes?: string;
+}
+
+interface FinanceItem {
+  id: string;
+  name: string;
+  tag: string;
+  val: string;
+  status: string;
+  email?: string;
+  phone?: string;
+  notes?: string;
 }
 
 const USERS: Record<string, User> = {
@@ -482,7 +494,7 @@ export default function PesartiBoard() {
   }, [activeTab]); // Recarrega ao trocar de aba para garantir frescor
   const [homeViewMode, setHomeViewMode] = useState<'grid' | 'list'>('grid');
   const [sidebarMode, setSidebarMode] = useState<'expanded' | 'collapsed' | 'hidden'>('expanded');
-  const [financeItems, setFinanceItems] = useState<any[]>([]);
+  const [financeItems, setFinanceItems] = useState<FinanceItem[]>([]);
   const [currentUserAvatar, setCurrentUserAvatar] = useState<string>("https://i.pravatar.cc/150?u=marco");
   const [currentUserRole, setCurrentUserRole] = useState<string>("viewer");
 
@@ -2302,7 +2314,7 @@ function GlobalStatusModal({ categories, onClose }: { categories: Category[], on
   );
 }
 
-function FinanceView({ items, onUpdate, onDelete }: { items: any[], onUpdate: (items: any[]) => void, onDelete: (id: string) => void }) {
+function FinanceView({ items, onUpdate, onDelete }: { items: FinanceItem[], onUpdate: (items: FinanceItem[]) => void, onDelete: (id: string) => void }) {
   const [activeSubTab, setActiveSubTab] = useState('dashboard');
   const [activeItem, setActiveItem] = useState<any|null>(null);
 
@@ -2616,7 +2628,7 @@ const SITE_ORDERS_COLUMNS: {id: SiteOrderCol, title: string, color: string, text
   { id: 'concluido', title: 'Pedido Concluido', color: 'bg-red-600', text: 'text-white' }
 ];
 
-function SiteOrdersBoard({ orders, onUpdate }: { orders: any[], onUpdate: (o: any[]) => void }) {
+function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: (o: SiteOrder[]) => void }) {
   const setOrders = onUpdate;
   const [activeOrder, setActiveOrder] = useState<any | null>(null);
 
