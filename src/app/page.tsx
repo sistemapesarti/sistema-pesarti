@@ -889,7 +889,7 @@ export default function PesartiBoard() {
               {activeTab === 'brainstorm' ? (
                 <BrainstormModule
                   maps={brainstormMaps}
-                  onSaveMaps={async (updated) => {
+                  onSaveMaps={async (updated: BrainstormMap[]) => {
                     setBrainstormMaps(updated);
                     for(const m of updated) await supabase.from('pesarti_brainstorm').upsert({
                       id: m.id,
