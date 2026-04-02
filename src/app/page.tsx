@@ -581,6 +581,68 @@ export default function PesartiBoard() {
     }
   }, []);
 
+  // --- SINCRONISMO REAL-TIME GLOBALE ---
+  useEffect(() => {
+    // 1. Escutar Categorias/Board
+    const channelCat = supabase.channel('realtime_categories')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_categories' }, async () => {
+         const { data } = await supabase.from('pesarti_categories').select('*');
+         if (data) {
+           const parsed = data.map((cat: any) => ({
+             ...cat,
+             icon: ICON_MAP[cat.icon] || FolderKanban
+           }));
+           setCategories(parsed);
+         }
+      }).subscribe();
+
+    // 2. Escutar Reuniões
+    const channelMeet = supabase.channel('realtime_meetings')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_meetings' }, async () => {
+         const { data } = await supabase.from('pesarti_meetings').select('*');
+         if (data) setMeetings(data);
+      }).subscribe();
+
+    // 3. Escutar Chat Geral
+    const channelChat = supabase.channel('realtime_chat')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pesarti_chat' }, (payload) => {
+         setChatMessages(prev => {
+            if (prev.find(m => m.id === payload.new.id)) return prev;
+            return [...prev, payload.new as BoardChatMessage];
+         });
+      }).subscribe();
+
+    // 4. Escutar Pedidos Site
+    const channelOrders = supabase.channel('realtime_orders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'site_orders' }, async () => {
+         const { data } = await supabase.from('site_orders').select('*');
+         if (data) setSiteOrders(data);
+      }).subscribe();
+
+    // 5. Escutar Financeiro
+    const channelFinance = supabase.channel('realtime_finance')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_finance' }, async () => {
+         const { data } = await supabase.from('pesarti_finance').select('*');
+         if (data) setFinanceItems(data);
+      }).subscribe();
+
+    // 6. Escutar Lembretes
+    const channelReminders = supabase.channel('realtime_reminders')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_reminders' }, async () => {
+         const { data } = await supabase.from('pesarti_reminders').select('*');
+         if (data) setReminders(data);
+      }).subscribe();
+
+    return () => {
+      supabase.removeChannel(channelCat);
+      supabase.removeChannel(channelMeet);
+      supabase.removeChannel(channelChat);
+      supabase.removeChannel(channelOrders);
+      supabase.removeChannel(channelFinance);
+      supabase.removeChannel(channelReminders);
+    };
+  }, []);
+
   const currentCategories = categories;
 
   const visibleCategories = useMemo(() => {
