@@ -49,6 +49,16 @@ export default function AdminDashboard() {
 
   useEffect(() => {
     fetchProfiles();
+    
+    // v2.6: Canal de Realtime para Aprovação Instantânea
+    const channel = supabase.channel('realtime_profiles')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'profiles' }, () => {
+        fetchProfiles();
+      }).subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, []);
 
   async function fetchProfiles() {

@@ -639,11 +639,11 @@ export default function PesartiBoard() {
          if (error) console.error("Realtime Meeting Error:", error);
       }).subscribe();
 
-    // 3. Escutar Chat Geral - v2.6 Sincronismo Total
+    // 3. Escutar Chat Geral - v2.6 Sincronismo Total (Fixo Ordenação)
     const channelChat = supabase.channel('realtime_chat_v26')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_chat' }, async () => {
-          // Busca garantida pela coluna 'timestamp' (que usamos no insert)
-          const { data: msgs } = await supabase.from('pesarti_chat').select('*').order('timestamp', { ascending: true });
+          // Busca garantida pela coluna 'created_at' (Verdade Absoluta)
+          const { data: msgs } = await supabase.from('pesarti_chat').select('*').order('created_at', { ascending: true });
           if (msgs) {
             setChatMessages(msgs.map((m: any) => ({
               id: m.id, userId: m.user_id, text: m.text, timestamp: m.timestamp, targetCardId: m.target_card_id
@@ -1085,16 +1085,16 @@ export default function PesartiBoard() {
             </button>
             <button
               onClick={() => setMeetingModalOpen(true)}
-              className="hidden sm:flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-2xl text-[10px] font-bold border border-white/10 transition-all text-zinc-300 hover:text-white uppercase tracking-widest"
+              className="flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-2xl text-[10px] font-bold border border-white/10 transition-all text-zinc-300 hover:text-white uppercase tracking-widest"
             >
-              <Video size={14} /> Agendar
+              <Video size={14} /> <span className="hidden xs:inline">Agendar</span>
             </button>
             <Link 
               href="/admin" 
-              className="hidden sm:flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500 px-4 py-2.5 rounded-2xl text-[10px] font-black border border-yellow-500/30 transition-all text-yellow-400 hover:text-black uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(234,179,8,0.2)] group relative"
+              className="flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500 px-4 py-2.5 rounded-2xl text-[10px] font-black border border-yellow-500/30 transition-all text-yellow-400 hover:text-black uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(234,179,8,0.2)] group relative"
             >
               <ShieldAlert size={14} className="group-hover:scale-110 transition-transform" /> 
-              Admin
+              <span className="hidden xs:inline">Admin</span>
               {pendingApprovalsCount > 0 && (
                 <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] border-2 border-[#09090b] animate-bounce">
                   {pendingApprovalsCount}
@@ -1154,17 +1154,30 @@ export default function PesartiBoard() {
               ) : activeTab === 'meetings' ? (
                 <MeetingsView meetings={meetings} onAdd={() => setMeetingModalOpen(true)} onDelete={deleteMeeting} />
               ) : activeTab === 'financeiro' ? (
-                <FinanceView items={financeItems} onUpdate={async (updated) => { 
-                  setFinanceItems(updated); 
-                  for(const it of updated) await supabase.from('pesarti_finance').upsert(it);
-                }} onDelete={async (id) => {
-                  setFinanceItems(financeItems.filter(i => i.id !== id));
-                  await supabase.from('pesarti_finance').delete().eq('id', id);
-                }} />
+                <FinanceView 
+                  items={financeItems} 
+                  onUpdate={async (updatedList) => {
+                    setFinanceItems(updatedList);
+                    // O salvamento individual já ocorre dentro do componente para evitar gargalo
+                  }} 
+                  onSaveItem={async (item) => {
+                    await supabase.from('pesarti_finance').upsert(item);
+                  }}
+                  onDelete={async (id) => {
+                    setFinanceItems(financeItems.filter(i => i.id !== id));
+                    await supabase.from('pesarti_finance').delete().eq('id', id);
+                  }} 
+                />
               ) : activeTab === 'lembretes' ? (
                 <RemindersView />
               ) : activeTab === 'orders' ? (
-                <SiteOrdersBoard orders={siteOrders} onUpdate={setSiteOrders} />
+                <SiteOrdersBoard 
+                  orders={siteOrders} 
+                  onUpdate={setSiteOrders} 
+                  onSaveItem={async (order) => {
+                    await supabase.from('site_orders').upsert(order);
+                  }}
+                />
               ) : !activeCardId ? (
                 <motion.div key="home" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className={sidebarFilter ? "max-w-7xl mx-auto w-full" : "max-w-[1800px] mx-auto w-full"}>
                   {!sidebarFilter ? (
@@ -2573,7 +2586,7 @@ function GlobalStatusModal({ categories, onClose }: { categories: Category[], on
   );
 }
 
-function FinanceView({ items, onUpdate, onDelete }: { items: FinanceItem[], onUpdate: (items: FinanceItem[]) => void, onDelete: (id: string) => void }) {
+function FinanceView({ items, onUpdate, onSaveItem, onDelete }: { items: FinanceItem[], onUpdate: (items: FinanceItem[]) => void, onSaveItem: (item: FinanceItem) => Promise<void>, onDelete: (id: string) => void }) {
   const [activeSubTab, setActiveSubTab] = useState('dashboard');
   const [activeItem, setActiveItem] = useState<any|null>(null);
 
@@ -2593,13 +2606,14 @@ function FinanceView({ items, onUpdate, onDelete }: { items: FinanceItem[], onUp
     document.body.removeChild(link);
   };
 
-  const handleAdd = () => {
+  const handleAdd = async () => {
     const p = prompt("Nome do Contato ou Despesa:");
     if(!p) return;
     const v = prompt("Valor ou Papel (ex: R$ 500, ou 'Fornecedor'):");
     const novo = { id: Date.now().toString(), name: p, tag: "Novo", val: v||"--", status: activeSubTab === 'dashboard' ? 'fornecedores' : activeSubTab, email: '', phone: '' };
     onUpdate([...items, novo]);
     setActiveItem(novo);
+    await onSaveItem(novo);
   };
 
   return (
@@ -2771,7 +2785,12 @@ function FinanceView({ items, onUpdate, onDelete }: { items: FinanceItem[], onUp
 
               <div className="flex justify-end gap-4 border-t border-white/5 pt-8">
                 <button onClick={() => { onDelete(activeItem.id); setActiveItem(null); }} className="px-8 py-4 bg-red-500/10 text-red-500 font-bold rounded-2xl hover:bg-red-500 hover:text-white transition-all uppercase tracking-widest text-xs">Excluir Permanente</button>
-                <button onClick={() => { onUpdate(items.map(i => i.id === activeItem.id ? activeItem : i)); setActiveItem(null); }} className="px-10 py-4 bg-emerald-600 font-bold text-white rounded-2xl hover:bg-emerald-500 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] uppercase tracking-widest text-xs">Salvar Alterações</button>
+                <button onClick={async () => { 
+                  const updated = items.map(i => i.id === activeItem.id ? activeItem : i);
+                  onUpdate(updated); 
+                  await onSaveItem(activeItem);
+                  setActiveItem(null); 
+                }} className="px-10 py-4 bg-emerald-600 font-bold text-white rounded-2xl hover:bg-emerald-500 transition-all shadow-[0_0_20px_rgba(16,185,129,0.3)] uppercase tracking-widest text-xs">Salvar Alterações</button>
               </div>
             </motion.div>
           </div>
@@ -2916,7 +2935,7 @@ const SITE_ORDERS_COLUMNS: {id: SiteOrderCol, title: string, color: string, text
   { id: 'concluido', title: 'Pedido Concluido', color: 'bg-red-600', text: 'text-white' }
 ];
 
-function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: (o: SiteOrder[]) => void }) {
+function SiteOrdersBoard({ orders, onUpdate, onSaveItem }: { orders: SiteOrder[], onUpdate: (o: SiteOrder[]) => void, onSaveItem: (order: SiteOrder) => Promise<void> }) {
   const setOrders = onUpdate;
   const [activeOrder, setActiveOrder] = useState<any | null>(null);
 
@@ -2946,10 +2965,10 @@ function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: 
   };
 
   const handleDeleteOrder = async (id: string) => {
-    if (confirm("Excluir este pedido permanentemente?")) {
-      setOrders(orders.filter(o => o.id !== id));
-      await supabase.from('site_orders').delete().eq('id', id);
-    }
+    // v2.6: Removido confirm nativo que travava no mobile/automatizado
+    setOrders(orders.filter(o => o.id !== id));
+    const { error } = await supabase.from('site_orders').delete().eq('id', id);
+    if (error) console.error("Erro ao deletar pedido:", error);
   };
 
   return (
@@ -3005,7 +3024,13 @@ function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: 
                           <span className={`text-[10px] font-black uppercase tracking-widest ${isOverdue ? 'text-red-500' : 'text-zinc-500'}`}>Prazo: {order.dueDate}</span>
                           {order.attachments && order.attachments.length > 0 && <Paperclip size={10} className="text-blue-400" />}
                        </div>
-                       <button onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} className="p-1.5 text-red-500 opacity-0 group-hover:opacity-100 hover:scale-110 transition-all rounded-lg bg-red-500/10"><Trash2 size={14}/></button>
+                       <button 
+                         onClick={(e) => { e.stopPropagation(); handleDeleteOrder(order.id); }} 
+                         className="p-3 text-red-500 opacity-100 md:opacity-0 group-hover:opacity-100 hover:scale-110 active:scale-95 transition-all rounded-2xl bg-red-500/10 border border-red-500/20"
+                         title="Excluir Pedido"
+                       >
+                         <Trash2 size={18}/>
+                       </button>
                      </div>
                   </div>
                 )})}
@@ -3023,21 +3048,22 @@ function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: 
       {/* MODAL DE EDIÇÃO DE ORDEM */}
       <AnimatePresence>
         {activeOrder && (
-          <div className="fixed inset-0 z-[200] flex items-center justify-center p-6">
+          <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 md:p-6">
             <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setActiveOrder(null)} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
-            <motion.div initial={{ scale: 0.9, opacity: 0, y: 50 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 50 }} className="relative w-full max-w-xl bg-[#0d0d0f] border border-blue-500/20 rounded-[48px] shadow-[0_0_40px_rgba(59,130,246,0.1)] p-12 flex flex-col">
+            <motion.div initial={{ scale: 0.9, opacity: 0, y: 50 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 50 }} className="relative w-full max-w-xl bg-[#0d0d0f] border border-blue-500/20 rounded-[48px] shadow-[0_0_40px_rgba(59,130,246,0.1)] p-8 md:p-12 flex flex-col max-h-[90vh] overflow-hidden">
               <div className="flex justify-between items-center border-b border-white/5 pb-8 mb-8">
                 <div className="flex items-center gap-4">
                   <div className="p-3 bg-blue-600 rounded-2xl text-white shadow-lg"><Globe size={24} /></div>
                   <div>
                     <span className="text-[10px] font-bold text-blue-400 uppercase tracking-widest">Painel Administrativo</span>
-                    <h3 className="text-2xl font-black text-white">Editar Pedido Site</h3>
+                    <h3 className="text-xl md:text-2xl font-black text-white line-clamp-1">Editar Pedido Site</h3>
                   </div>
                 </div>
                 <button onClick={() => setActiveOrder(null)} className="p-4 bg-white/5 hover:bg-white/10 text-zinc-400 hover:text-white rounded-3xl transition-all"><X size={20} /></button>
               </div>
 
-              <div className="space-y-6 flex-1">
+              {/* CONTEÚDO SCROLLABLE v2.6 */}
+              <div className="space-y-6 flex-1 overflow-y-auto pr-2 custom-scrollbar">
                 <div>
                   <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-3">Resumo / ID Produto</label>
                   <input value={activeOrder.title} onChange={e => setActiveOrder({...activeOrder, title: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white font-bold outline-none focus:border-blue-500/50" />
@@ -3046,7 +3072,7 @@ function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: 
                   <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-3">Nome do Cliente</label>
                   <input value={activeOrder.customer} onChange={e => setActiveOrder({...activeOrder, customer: e.target.value})} className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-blue-500/50" />
                 </div>
-                <div className="grid grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div>
                     <label className="text-[10px] font-bold text-zinc-500 uppercase tracking-widest block mb-3">Status Atual</label>
                     <div className="relative">
@@ -3073,7 +3099,6 @@ function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: 
                   />
                   <p className="text-[9px] text-zinc-600 mt-2 italic px-2">* Este campo aceita qualquer volume de texto para facilitar a entrada manual antes da API.</p>
                 </div>
-
 
                 <div className="pt-6 border-t border-white/5 space-y-4">
                    <div className="flex justify-between items-center">
@@ -3107,17 +3132,21 @@ function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: 
                 </div>
               </div>
 
-              <div className="mt-12 pt-8 border-t border-white/5">
+              {/* RODAPÉ FIXO v2.6 */}
+              <div className="pt-8 border-t border-white/5 flex gap-4 bg-[#0d0d0f] mt-auto">
+                <button 
+                  onClick={() => setActiveOrder(null)}
+                  className="flex-1 py-5 bg-white/5 hover:bg-white/10 text-zinc-400 font-bold rounded-3xl transition-all border border-white/10 active:scale-95"
+                >Cancelar</button>
                 <button 
                   onClick={async () => {
                     const updated = orders.map(o => o.id === activeOrder.id ? activeOrder : o);
-                    setOrders(updated);
-                    await supabase.from('site_orders').upsert(activeOrder);
+                    onUpdate(updated);
+                    await onSaveItem(activeOrder);
                     setActiveOrder(null);
                   }}
-                  className="w-full py-5 bg-blue-600 hover:bg-blue-500 text-white rounded-2xl font-black uppercase tracking-widest text-sm shadow-[0_0_20px_rgba(37,99,235,0.4)] transition-all active:scale-95"
+                  className="flex-[2] py-5 bg-blue-600 hover:bg-blue-500 text-white font-black uppercase tracking-widest rounded-3xl transition-all shadow-xl shadow-blue-600/20 active:scale-95"
                 >Salvar Pedido</button>
-
               </div>
             </motion.div>
           </div>
