@@ -450,6 +450,7 @@ export default function PesartiBoard() {
   const [brainstormMaps, setBrainstormMaps] = useState<BrainstormMap[]>([]);
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
+  const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
 
   // --- DATA SYNC LOGIC ---
   const fetchData = async () => {
@@ -491,6 +492,10 @@ export default function PesartiBoard() {
       // 6. Finance
       const { data: fItems } = await supabase.from('pesarti_finance').select('*').order('created_at', { ascending: true });
       if (fItems) setFinanceItems(fItems);
+
+      // 7. Pending Approvals v2.6
+      const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_approved', false);
+      setPendingApprovalsCount(count || 0);
 
     } catch (e) {
       console.error("Erro ao sincronizar dados:", e);
@@ -1058,8 +1063,20 @@ export default function PesartiBoard() {
               onClick={() => setMeetingModalOpen(true)}
               className="hidden sm:flex items-center gap-2 bg-white/5 hover:bg-white/10 px-4 py-2.5 rounded-2xl text-[10px] font-bold border border-white/10 transition-all text-zinc-300 hover:text-white uppercase tracking-widest"
             >
-              <Video size={14} /> Agendar Reunião
+              <Video size={14} /> Agendar
             </button>
+            <Link 
+              href="/admin" 
+              className="hidden sm:flex items-center gap-2 bg-yellow-500/10 hover:bg-yellow-500 px-4 py-2.5 rounded-2xl text-[10px] font-black border border-yellow-500/30 transition-all text-yellow-400 hover:text-black uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(234,179,8,0.2)] group relative"
+            >
+              <ShieldAlert size={14} className="group-hover:scale-110 transition-transform" /> 
+              Admin
+              {pendingApprovalsCount > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-600 text-white rounded-full flex items-center justify-center text-[10px] border-2 border-[#09090b] animate-bounce">
+                  {pendingApprovalsCount}
+                </span>
+              )}
+            </Link>
           </div>
         </header>
 
