@@ -451,6 +451,7 @@ export default function PesartiBoard() {
   const [selectedCalendarDate, setSelectedCalendarDate] = useState<string | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
+  const [sessionUserId, setSessionUserId] = useState<string | null>(null);
 
   // --- DATA SYNC LOGIC ---
   const fetchData = async () => {
@@ -544,6 +545,7 @@ export default function PesartiBoard() {
         window.location.href = '/login';
         return;
       }
+      setSessionUserId(session.user.id);
       
       // Checagem Real de Aprovação da Agência
       const { data: profile } = await supabase
@@ -566,6 +568,8 @@ export default function PesartiBoard() {
     } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!session) {
         window.location.href = '/login';
+      } else {
+        setSessionUserId(session.user.id);
       }
     });
 
@@ -854,8 +858,8 @@ export default function PesartiBoard() {
         return;
       }
     }
-    // Identidade do dispositivo / usuário
-    const actualUserId = typeof window !== 'undefined' ? (localStorage.getItem('pesarti_user_id') || 'u1') : 'u1';
+    // Identidade do dispositivo / usuário - v2.6 Sessão Real
+    const actualUserId = sessionUserId || (typeof window !== 'undefined' ? (localStorage.getItem('pesarti_user_id') || 'u1') : 'u1');
     
     // Sanitização XSS v2.6
     const cleanText = DOMPurify.sanitize(text);
