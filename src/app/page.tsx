@@ -794,17 +794,43 @@ export default function PesartiBoard() {
   return (
     <div className="flex h-screen w-full bg-[#09090b] text-zinc-100 overflow-hidden font-sans relative">
       
-      {/* Overlay Mobile */}
-      <div className={`fixed inset-0 bg-black/80 backdrop-blur-md z-[190] md:hidden ${isMobileMenuOpen ? 'block' : 'hidden'}`} onClick={() => setIsMobileMenuOpen(false)} />
+      {/* Overlay Mobile con Blur */}
+      <AnimatePresence>
+        {isMobileMenuOpen && (
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/60 backdrop-blur-md z-[250] md:hidden" 
+            onClick={() => setIsMobileMenuOpen(false)} 
+          />
+        )}
+      </AnimatePresence>
       
-      {/* Sidebar Wrapper Responsivo */}
-      <div className={`fixed md:relative z-[200] h-full transition-transform duration-300 md:translate-x-0 ${isMobileMenuOpen ? 'translate-x-0' : '-translate-x-full pb-0'}`}>
+      {/* Sidebar Drawer para Mobile e Sidebar Fixa para Desktop */}
+      <div className={`
+        fixed md:relative z-[300] h-full 
+        transition-all duration-500 bg-[#09090b] border-r border-white/5
+        ${isMobileMenuOpen ? 'translate-x-0 w-[85%] sm:w-[350px] shadow-[20px_0_100px_rgba(0,0,0,0.8)]' : '-translate-x-full md:translate-x-0 md:w-auto'}
+      `}>
         <Sidebar
           categories={categories}
           activeFilter={sidebarFilter}
-          onSelectFilter={(f) => { setSidebarFilter(f); setActiveCardId(null); setActiveTopicId(null); setActiveTab('board'); setIsMobileMenuOpen(false); }}
+          onSelectFilter={(f) => { 
+            setSidebarFilter(f); 
+            setActiveCardId(null); 
+            setActiveTopicId(null); 
+            setActiveTab('board'); 
+            setIsMobileMenuOpen(false); 
+          }}
           activeTab={activeTab}
-          onSelectTab={(t) => { setActiveTab(t); setIsMobileMenuOpen(false); setActiveCardId(null); }}
+          onSelectTab={(t) => { 
+            setActiveTab(t); 
+            setIsMobileMenuOpen(false); 
+            setActiveCardId(null); 
+            // Só limpa o filtro se estiver trocando para abas que NÃO são o quadro principal
+            if (t !== 'board') setSidebarFilter(null);
+          }}
           mode={sidebarMode}
           onToggleMode={setSidebarMode}
           userRole={currentUserRole}
@@ -812,37 +838,43 @@ export default function PesartiBoard() {
       </div>
 
       <div className="flex-1 flex flex-col h-full relative z-0 overflow-hidden w-full">
-        <header className="px-6 md:px-8 py-4 flex flex-shrink-0 justify-between items-center z-10 border-b border-white/5 bg-[#09090b]/80 backdrop-blur-md">
-          <div className="flex items-center gap-4">
-            <button onClick={() => setIsMobileMenuOpen(true)} className="md:hidden p-2.5 bg-white/5 rounded-xl text-zinc-400 border border-white/10 hover:text-white active:scale-95 shrink-0">
-              <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="4" x2="20" y1="12" y2="12"/><line x1="4" x2="20" y1="6" y2="6"/><line x1="4" x2="20" y1="18" y2="18"/></svg>
+        <header className="px-4 md:px-8 py-5 flex flex-shrink-0 justify-between items-center z-10 border-b border-white/5 bg-[#09090b]/80 backdrop-blur-md sticky top-0">
+          <div className="flex items-center gap-3 md:gap-4 overflow-hidden">
+            <button 
+              onClick={() => setIsMobileMenuOpen(true)} 
+              className="md:hidden p-3 bg-white/5 rounded-2xl text-zinc-400 border border-white/10 hover:text-white active:scale-95 shrink-0 shadow-lg"
+            >
+              <LayoutDashboard size={22} />
             </button>
-            <h1 className="text-xl font-bold text-white flex items-center gap-3 cursor-pointer" onClick={() => { setSidebarFilter(null); setActiveCardId(null); setActiveTopicId(null); setActiveTab('board'); setSelectedCalendarDate(null); }}>
-              <span className="hidden sm:block">Pesarti</span>
+            <h1 className="hidden sm:flex text-xl font-bold text-white items-center gap-3 cursor-pointer shrink-0" onClick={() => { setSidebarFilter(null); setActiveCardId(null); setActiveTopicId(null); setActiveTab('board'); setSelectedCalendarDate(null); }}>
+              <span>Pesarti</span>
             </h1>
-            <button onClick={() => setCategoryModalOpen(true)} className="px-3 py-1.5 bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 rounded-lg text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] whitespace-nowrap ml-1 shrink-0">
-               + Nova Área
+            
+            <button 
+              onClick={() => setCategoryModalOpen(true)} 
+              className="px-4 py-3 bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] whitespace-nowrap active:scale-95 shrink-0"
+            >
+               + Área
             </button>
 
             <div
               onClick={() => setStatusModalOpen(true)}
-              className="hidden md:flex items-center gap-4 bg-white/5 px-4 py-1.5 rounded-full border border-white/10 cursor-pointer hover:bg-white/10 transition-all"
+              className="hidden lg:flex items-center gap-4 bg-white/5 px-4 py-2 rounded-full border border-white/10 cursor-pointer hover:bg-white/10 transition-all shrink-0"
             >
               <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Status Global</span>
-              <div className="w-40 h-1.5 bg-black/50 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500 shadow-[0_0_10px_rgba(168,85,247,0.5)]" style={{ width: `${getOverallProgress()}%` }} />
+              <div className="w-24 h-1.5 bg-black/50 rounded-full overflow-hidden">
+                <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500" style={{ width: `${getOverallProgress()}%` }} />
               </div>
-              <span className="text-xs font-bold text-white">{getOverallProgress()}%</span>
             </div>
           </div>
 
           <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2 mr-2">
-              <Link href="/profile" className="transition-transform hover:scale-110 active:scale-95 group">
-                <img src={currentUserAvatar} className="w-10 h-10 rounded-full border-2 border-[#09090b] shadow-lg ring-2 ring-transparent group-hover:ring-indigo-500 transition-all" title="Editar Meu Perfil" />
+            <div className="flex items-center gap-2">
+              <Link href="/profile" className="transition-transform hover:scale-110 active:scale-95 group shrink-0">
+                <img src={currentUserAvatar} className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-[#09090b] shadow-lg ring-2 ring-transparent group-hover:ring-indigo-500 transition-all" title="Editar Meu Perfil" />
               </Link>
 
-              <Link href="/login" className="flex items-center justify-center p-2 rounded-xl text-red-500/70 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Sair do Sistema">
+              <Link href="/login" className="hidden md:flex items-center justify-center p-2 rounded-xl text-red-500/70 hover:text-red-400 hover:bg-red-500/10 transition-colors" title="Sair do Sistema">
                 <LogOut size={18} />
               </Link>
             </div>
@@ -2677,13 +2709,13 @@ function SiteOrdersBoard({ orders, onUpdate }: { orders: SiteOrder[], onUpdate: 
         </div>
       </div>
       
-      <div className="flex-1 overflow-x-auto flex gap-6 pb-6 custom-scrollbar items-start">
+      <div className="flex-1 overflow-x-auto flex gap-4 md:gap-6 pb-8 custom-scrollbar items-start snap-x snap-mandatory md:snap-none px-4 md:px-0">
         {SITE_ORDERS_COLUMNS.map(col => (
            <div 
              key={col.id} 
              onDragOver={e => e.preventDefault()}
              onDrop={e => handleDrop(e, col.id)}
-             className={`w-[320px] shrink-0 flex flex-col rounded-[32px] overflow-hidden bg-black/40 border border-white/5 shadow-2xl h-full`}
+             className={`w-[85vw] md:w-[320px] snap-center shrink-0 flex flex-col rounded-[32px] overflow-hidden bg-black/40 border border-white/5 shadow-2xl h-full`}
            >
              <div className={`${col.color} ${col.text} p-5 flex justify-between items-center`}>
                 <span className="font-bold text-[11px] tracking-widest uppercase">{col.title}</span>
