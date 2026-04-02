@@ -17,6 +17,7 @@ export default function LoginPage() {
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  const [resending, setResending] = useState(false);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -65,7 +66,11 @@ export default function LoginPage() {
       });
 
       if (supaError) {
-        setError("Credenciais inválidas ou conta inexistente.");
+        if (supaError.message.includes("Email not confirmed")) {
+          setError("Seu e-mail ainda não foi confirmado. Verifique sua caixa de entrada.");
+        } else {
+          setError("Credenciais inválidas ou conta inexistente.");
+        }
       } else if (data.session) {
         // Redireciona com segurança
         router.push("/");
@@ -137,10 +142,35 @@ export default function LoginPage() {
 
           <div className="mt-6 text-center text-sm text-zinc-400 relative z-10">
             {isLogin ? "Ainda não tem acesso?" : "Já possui uma conta?"}
-            <button onClick={() => setIsLogin(!isLogin)} className="ml-2 text-white font-medium hover:text-[#7c3AED] transition-colors">
+            <button type="button" onClick={() => setIsLogin(!isLogin)} className="ml-2 text-white font-medium hover:text-[#7c3AED] transition-colors">
               {isLogin ? "Solicitar convite" : "Fazer Login"}
             </button>
           </div>
+
+          <AnimatePresence>
+            {error && error.includes("não foi confirmado") && (
+              <motion.div initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="mt-4 pt-4 border-t border-white/5 text-center">
+                <button 
+                  type="button"
+                  onClick={async () => {
+                    setResending(true);
+                    const { error: resendError } = await supabase.auth.resend({
+                      type: 'signup',
+                      email,
+                      options: { emailRedirectTo: `${window.location.origin}/login` }
+                    });
+                    setResending(false);
+                    if (resendError) setError(resendError.message);
+                    else setSuccess("Link de confirmação reenviado! Cheque seu e-mail.");
+                  }}
+                  className="text-xs text-purple-400 hover:text-white font-bold tracking-widest uppercase transition-all"
+                  disabled={resending}
+                >
+                  {resending ? "Enviando..." : "Reenviar e-mail de confirmação"}
+                </button>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
       </motion.div>
     </div>
