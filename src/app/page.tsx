@@ -469,7 +469,15 @@ export default function PesartiBoard() {
 
       // 3. Chat
       const { data: msgs } = await supabase.from('pesarti_chat').select('*').order('created_at', { ascending: true });
-      if (msgs) setChatMessages(msgs);
+      if (msgs) {
+        setChatMessages(msgs.map((m: any) => ({
+          id: m.id,
+          userId: m.user_id,
+          text: m.text,
+          timestamp: m.timestamp,
+          targetCardId: m.target_card_id
+        })));
+      }
 
       // 4. Brainstorm
       const { data: maps } = await supabase.from('pesarti_brainstorm').select('*').order('created_at', { ascending: true });
@@ -606,9 +614,16 @@ export default function PesartiBoard() {
     // 3. Escutar Chat Geral
     const channelChat = supabase.channel('realtime_chat')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pesarti_chat' }, (payload) => {
+         const newMsg = {
+           id: payload.new.id,
+           userId: payload.new.user_id, // Mapeando de volta p/ camelCase
+           text: payload.new.text,
+           timestamp: payload.new.timestamp,
+           targetCardId: payload.new.target_card_id
+         };
          setChatMessages(prev => {
-            if (prev.find(m => m.id === payload.new.id)) return prev;
-            return [...prev, payload.new as BoardChatMessage];
+            if (prev.find(m => m.id === newMsg.id)) return prev;
+            return [...prev, newMsg as BoardChatMessage];
          });
       }).subscribe();
 
@@ -778,8 +793,15 @@ export default function PesartiBoard() {
       }
     }
     const newMsg = { id: msgId, userId: 'u1', text, timestamp };
+    const msgToDb = { 
+      id: msgId, 
+      user_id: 'u1', 
+      text, 
+      timestamp, 
+      target_card_id: (newMsg as any).targetCardId || null 
+    };
     setChatMessages(prev => [...prev, newMsg]);
-    await supabase.from('pesarti_chat').insert([newMsg]);
+    await supabase.from('pesarti_chat').insert([msgToDb]);
   };
 
   const handleSendAiPrompt = async () => {
