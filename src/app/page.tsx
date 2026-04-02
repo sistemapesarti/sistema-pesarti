@@ -2268,7 +2268,7 @@ function GamifiedDashboardHome({ categories, users, meetings, messages, onSendMe
            <div className="bg-[#121212] rounded-[24px] md:rounded-[32px] p-5 md:p-8 border border-white/5 hover:border-red-500/30 transition-all flex flex-col justify-between group overflow-hidden relative">
               <div className="absolute top-0 right-0 w-24 md:w-32 h-24 md:h-32 bg-red-500/5 blur-2xl rounded-full" />
               <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center mb-4 md:mb-6"><AlertCircle size={20} /></div>
-              <div className="text-3xl md:text-5xl font-black text-red-500 tracking-tighter mb-1 select-none">{allSubCards.filter(s => s.status === 'todo').length}</div>
+              <div className="text-3xl md:text-5xl font-black text-red-500 tracking-tighter mb-1 select-none">{allSubCards.filter((s: any) => s.status === 'todo').length}</div>
               <div className="text-[8px] md:text-[10px] font-black uppercase text-zinc-500 tracking-widest">Pendências</div>
            </div>
 
