@@ -548,13 +548,28 @@ export default function PesartiBoard() {
       }
       setSessionUserId(session.user.id);
       
-      // Checagem Real de Aprovação da Agência
-      const { data: profile } = await supabase
+      // Checagem Real de Aprovação ou Criação de Perfil (v2.6)
+      const { data: profile, error } = await supabase
         .from('profiles')
-        .select('is_approved')
+        .select('*')
         .eq('id', session.user.id)
         .single();
         
+      if (!profile) {
+        // Se o perfil não existe (primeiro login após confirmação de e-mail)
+        await supabase.from('profiles').insert({
+          id: session.user.id,
+          email: session.user.email,
+          full_name: session.user.user_metadata?.full_name || 'Novo Usuário',
+          role: 'viewer',
+          is_approved: false
+        });
+        alert("Seu perfil foi criado. Aguarde a confirmação da administração para acessar todas as áreas!");
+        await supabase.auth.signOut();
+        window.location.href = '/login';
+        return;
+      }
+         
       if (!profile?.is_approved) {
         alert("Seu acesso ainda está sendo validado pela Pesarti. Você será avisado por e-mail!");
         await supabase.auth.signOut();

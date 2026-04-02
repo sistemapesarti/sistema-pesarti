@@ -35,7 +35,8 @@ export default function LoginPage() {
         email,
         password,
         options: {
-          data: { full_name: name, role: 'viewer' }
+          data: { full_name: name, role: 'viewer' },
+          emailRedirectTo: `${window.location.origin}/login`
         }
       });
 
