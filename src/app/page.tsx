@@ -2095,18 +2095,18 @@ function GamifiedDashboardHome({ categories, users, meetings, messages, onSendMe
   return (
     <div className="flex flex-col gap-8 w-full">
         {/* Banner Gamificado */}
-        <div className="relative bg-[#18181b] rounded-[40px] p-10 border border-white/5 overflow-hidden shadow-2xl group">
+        <div className="relative bg-[#18181b] rounded-[40px] p-6 md:p-10 border border-white/5 overflow-hidden shadow-2xl group">
            <div className="absolute top-0 right-0 w-[50%] h-[150%] bg-gradient-to-l from-indigo-600/20 to-transparent blur-3xl pointer-events-none group-hover:from-fuchsia-600/20 transition-all duration-1000" />
            <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
              <div>
-               <h2 className="text-4xl font-black text-white tracking-tighter mb-4">Cockpit Estratégico</h2>
-               <p className="text-sm text-zinc-400 max-w-xl">Visão global da equipe de Marketing e Produção Pesarti. Acompanhe quadros, conversões e fluxo de ponta a ponta.</p>
+               <h2 className="text-3xl md:text-4xl font-black text-white tracking-tighter mb-4">Cockpit Estratégico</h2>
+               <p className="text-sm text-zinc-400 max-w-xl font-medium leading-relaxed">Visão global da equipe de Marketing e Produção Pesarti. Acompanhe quadros, conversões e fluxo de ponta a ponta.</p>
              </div>
              
-             <div className="flex flex-col gap-2 min-w-[200px]">
-                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Global Score (XP)</span>
-                <div className="flex items-end gap-3 mb-2">
-                  <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter">{progress}%</span>
+             <div className="flex flex-col gap-3 min-w-[200px] w-full md:w-auto">
+                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500">Global Score (XP)</span>
+                <div className="flex items-end gap-3">
+                  <span className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter leading-none">{progress}%</span>
                 </div>
                 <div className="w-full h-3 bg-black/50 rounded-full border border-white/5 overflow-hidden p-0.5">
                    <motion.div initial={{width:0}} animate={{width:`${progress}%`}} transition={{duration:1.5, delay:0.2, type:'spring'}} className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.6)]" />
@@ -2368,7 +2368,7 @@ function GlobalChatPanel({ messages, onSendMessage, onClose }: { messages: Board
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      className="w-[400px] h-[600px] glass-panel bg-[#09090b]/95 backdrop-blur-3xl border border-white/10 flex flex-col z-[100] shadow-[0_30px_80px_rgba(0,0,0,0.8)] rounded-[40px] overflow-hidden"
+      className="fixed inset-0 sm:inset-auto sm:right-8 sm:bottom-28 w-full h-full sm:w-[400px] sm:h-[600px] glass-panel bg-[#09090b]/95 backdrop-blur-3xl border border-white/10 flex flex-col z-[100] shadow-[0_30px_80px_rgba(0,0,0,0.8)] sm:rounded-[40px] overflow-hidden"
     >
       <div className="p-8 border-b border-white/5 flex items-center justify-between bg-purple-600/5">
         <div>
