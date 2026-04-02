@@ -824,14 +824,19 @@ export default function PesartiBoard() {
             setIsMobileMenuOpen(false); 
           }}
           activeTab={activeTab}
-          onSelectTab={(t) => { 
+          onSelectTab={(t: any) => { 
+            if (t === 'ai_panel') {
+                setIsAiPanelOpen(true);
+                setIsMobileMenuOpen(false);
+                return;
+            }
             setActiveTab(t); 
             setIsMobileMenuOpen(false); 
             setActiveCardId(null); 
             // Só limpa o filtro se estiver trocando para abas que NÃO são o quadro principal
             if (t !== 'board') setSidebarFilter(null);
           }}
-          mode={sidebarMode}
+          mode={isMobileMenuOpen ? 'expanded' : sidebarMode}
           onToggleMode={setSidebarMode}
           userRole={currentUserRole}
         />
@@ -846,26 +851,43 @@ export default function PesartiBoard() {
             >
               <LayoutDashboard size={22} />
             </button>
-            <h1 className="hidden sm:flex text-xl font-bold text-white items-center gap-3 cursor-pointer shrink-0" onClick={() => { setSidebarFilter(null); setActiveCardId(null); setActiveTopicId(null); setActiveTab('board'); setSelectedCalendarDate(null); }}>
-              <span>Pesarti</span>
-            </h1>
+            
+            {/* TÍTULO E NAVEGAÇÃO DINÂMICA */}
+            {(sidebarFilter || activeTab !== 'board' || activeCardId) ? (
+              <div className="flex flex-col">
+                <button 
+                  onClick={() => {
+                    setSidebarFilter(null);
+                    setActiveTab('board');
+                    setActiveCardId(null);
+                    setActiveTopicId(null);
+                  }}
+                  className="flex items-center gap-2 text-white active:scale-95 transition-all"
+                >
+                  <ArrowLeft size={18} className="text-blue-500" />
+                  <div className="flex flex-col">
+                    <span className="text-[9px] font-black uppercase text-blue-500 tracking-[0.3em]">Home</span>
+                    <h2 className="text-sm font-black uppercase tracking-widest text-white -mt-1">
+                      {sidebarFilter ? categories.find(c => c.id === sidebarFilter)?.title : activeTab.toUpperCase()}
+                    </h2>
+                  </div>
+                </button>
+              </div>
+            ) : (
+              <div className="flex flex-col">
+                 <h1 className="text-xl font-bold text-white flex items-center gap-3 cursor-pointer" onClick={() => { setSidebarFilter(null); setActiveCardId(null); setActiveTopicId(null); setActiveTab('board'); setSelectedCalendarDate(null); }}>
+                   <span>PESARTI</span>
+                 </h1>
+                 <span className="text-[8px] font-black text-zinc-600 uppercase tracking-[0.4em]">Internal CRM v2.6</span>
+              </div>
+            )}
             
             <button 
               onClick={() => setCategoryModalOpen(true)} 
-              className="px-4 py-3 bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 rounded-2xl text-[10px] font-black uppercase tracking-widest hover:bg-indigo-600 hover:text-white transition-all shadow-[0_0_15px_rgba(79,70,229,0.2)] whitespace-nowrap active:scale-95 shrink-0"
+              className="ml-auto px-4 py-3 bg-indigo-600/20 border border-indigo-500/40 text-indigo-400 rounded-2xl text-[10px] font-black uppercase tracking-widest active:scale-95 shrink-0"
             >
                + Área
             </button>
-
-            <div
-              onClick={() => setStatusModalOpen(true)}
-              className="hidden lg:flex items-center gap-4 bg-white/5 px-4 py-2 rounded-full border border-white/10 cursor-pointer hover:bg-white/10 transition-all shrink-0"
-            >
-              <span className="text-[10px] text-zinc-400 font-bold uppercase tracking-wider">Status Global</span>
-              <div className="w-24 h-1.5 bg-black/50 rounded-full overflow-hidden">
-                <div className="h-full bg-gradient-to-r from-purple-500 to-pink-500" style={{ width: `${getOverallProgress()}%` }} />
-              </div>
-            </div>
           </div>
 
           <div className="flex items-center gap-4">
@@ -878,6 +900,13 @@ export default function PesartiBoard() {
                 <LogOut size={18} />
               </Link>
             </div>
+            <button
+              onClick={() => setIsAiPanelOpen(true)}
+              className="md:hidden p-3 bg-fuchsia-600/20 border border-fuchsia-500/40 text-fuchsia-400 rounded-2xl active:scale-95 transition-all"
+            >
+              <Sparkles size={20} className="animate-pulse" />
+            </button>
+            
             <button
               onClick={() => setIsAiPanelOpen(true)}
               className="hidden lg:flex items-center gap-2 bg-fuchsia-600/10 hover:bg-fuchsia-600 px-4 py-2.5 rounded-2xl text-[10px] font-black border border-fuchsia-500/30 transition-all text-fuchsia-400 hover:text-white uppercase tracking-[0.2em] shadow-[0_0_15px_rgba(217,70,239,0.2)] group"
@@ -1264,6 +1293,7 @@ function Sidebar({ categories, activeFilter, onSelectFilter, activeTab, onSelect
   }));
 
   const endItems = [
+    { id: "ai_tab", icon: Sparkles, label: "Chat IA Copiloto", type: 'tab' as const, tab: 'ai_panel' as any },
     { id: "orders_tab", icon: CheckCircle2, label: "Pedidos Site", type: 'tab' as const, tab: 'orders' as const },
     { id: "financeiro_tab", icon: Building2, label: "Financeiro", type: 'tab' as const, tab: 'financeiro' as const },
     { id: "lembretes_tab", icon: FileText, label: "Lembretes", type: 'tab' as const, tab: 'lembretes' as const },
