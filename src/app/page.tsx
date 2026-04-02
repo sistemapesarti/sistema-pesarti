@@ -452,6 +452,7 @@ export default function PesartiBoard() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [pendingApprovalsCount, setPendingApprovalsCount] = useState(0);
   const [sessionUserId, setSessionUserId] = useState<string | null>(null);
+  const [reminders, setReminders] = useState<any[]>([]);
 
   // --- DATA SYNC LOGIC ---
   const fetchData = async () => {
@@ -1173,7 +1174,11 @@ export default function PesartiBoard() {
                   }} 
                 />
               ) : activeTab === 'lembretes' ? (
-                <RemindersView />
+                <RemindersView 
+                  reminders={reminders} 
+                  onUpdate={setReminders} 
+                  onRefresh={fetchData}
+                />
               ) : activeTab === 'orders' ? (
                 <SiteOrdersBoard 
                   orders={siteOrders} 
@@ -2804,26 +2809,15 @@ function FinanceView({ items, onUpdate, onSaveItem, onDelete }: { items: Finance
   );
 }
 
-function RemindersView() {
-  const [reminders, setReminders] = useState<any[]>([]);
+function RemindersView({ reminders, onUpdate: setReminders, onRefresh: fetchReminders }: { reminders: any[], onUpdate: (r: any[]) => void, onRefresh: () => void }) {
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
   const [editingRem, setEditingRem] = useState<any>(null);
 
   useEffect(() => {
-    fetchReminders();
+    // Agora o refresh é controlado pelo global para manter tudo sincronizado
   }, []);
 
-  async function fetchReminders() {
-    const { data } = await supabase.from('reminders').select('*').order('created_at', { ascending: false });
-    if (data) {
-      setReminders(data.map(d => ({
-        id: d.id,
-        text: d.text,
-        color: ["bg-yellow-500/20", "bg-blue-500/20", "bg-pink-500/20", "bg-emerald-500/20", "bg-purple-500/20"][Math.floor(Math.random()*5)],
-        author: d.author_id || "Anônimo"
-      })));
-    }
-  }
+  // fetchReminders original movido para o global fetchData
 
   const handleCreate = async () => {
     const txt = "Novo Lembrete Vazio...";
