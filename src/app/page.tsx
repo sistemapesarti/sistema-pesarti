@@ -497,6 +497,17 @@ export default function PesartiBoard() {
       const { count } = await supabase.from('profiles').select('*', { count: 'exact', head: true }).eq('is_approved', false);
       setPendingApprovalsCount(count || 0);
 
+      // 8. Reminders v2.6 Initial Load
+      const { data: rems } = await supabase.from('reminders').select('*').order('created_at', { ascending: false });
+      if (rems) {
+        setReminders(rems.map((d: any) => ({
+          id: d.id,
+          text: d.text,
+          color: ["bg-yellow-500/20", "bg-blue-500/20", "bg-pink-500/20", "bg-emerald-500/20", "bg-purple-500/20"][Math.floor(Math.random()*5)],
+          author: d.author_id || "Anônimo"
+        })));
+      }
+
     } catch (e) {
       console.error("Erro ao sincronizar dados:", e);
     } finally {
@@ -506,7 +517,10 @@ export default function PesartiBoard() {
 
   useEffect(() => {
     fetchData();
-  }, [activeTab]); // Recarrega ao trocar de aba para garantir frescor
+    // Fallback v2.6: Sincronismo ultra-rápido garantido a cada 5s
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
+  }, [activeTab]);
   const [homeViewMode, setHomeViewMode] = useState<'grid' | 'list'>('grid');
   const [sidebarMode, setSidebarMode] = useState<'expanded' | 'collapsed' | 'hidden'>('expanded');
   const [financeItems, setFinanceItems] = useState<FinanceItem[]>([]);
@@ -616,11 +630,13 @@ export default function PesartiBoard() {
          if (data) setBrainstormMaps(data);
       }).subscribe();
 
-    // 2. Escutar Reuniões
-    const channelMeet = supabase.channel('realtime_meetings')
+    // 2. Escutar Reuniões v2.6 Sincronismo Total
+    const channelMeet = supabase.channel('realtime_meetings_v26')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_meetings' }, async () => {
-         const { data } = await supabase.from('pesarti_meetings').select('*');
+         // Busca a verdade absoluta ordenada por data (ascendente)
+         const { data, error } = await supabase.from('pesarti_meetings').select('*').order('date', { ascending: true });
          if (data) setMeetings(data);
+         if (error) console.error("Realtime Meeting Error:", error);
       }).subscribe();
 
     // 3. Escutar Chat Geral - v2.6 Sincronismo Total
@@ -635,25 +651,33 @@ export default function PesartiBoard() {
           }
       }).subscribe();
 
-    // 4. Escutar Pedidos Site
-    const channelOrders = supabase.channel('realtime_orders')
+    // 4. Escutar Pedidos Site v2.6
+    const channelOrders = supabase.channel('realtime_orders_v26')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'site_orders' }, async () => {
-         const { data } = await supabase.from('site_orders').select('*');
-         if (data) setSiteOrders(data);
+          const { data } = await supabase.from('site_orders').select('*').order('due_date', { ascending: true });
+          if (data) setSiteOrders(data);
       }).subscribe();
 
-    // 5. Escutar Financeiro
-    const channelFinance = supabase.channel('realtime_finance')
+    // 5. Escutar Financeiro v2.6
+    const channelFinance = supabase.channel('realtime_finance_v26')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_finance' }, async () => {
-         const { data } = await supabase.from('pesarti_finance').select('*');
-         if (data) setFinanceItems(data);
+          const { data } = await supabase.from('pesarti_finance').select('*').order('created_at', { ascending: true });
+          if (data) setFinanceItems(data);
       }).subscribe();
 
-    // 6. Escutar Lembretes
-    const channelReminders = supabase.channel('realtime_reminders')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_reminders' }, async () => {
-         const { data } = await supabase.from('pesarti_reminders').select('*');
-         if (data) setReminders(data);
+    // 6. Escutar Lembretes v2.6
+    const channelReminders = supabase.channel('realtime_reminders_v26')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reminders' }, async () => {
+         const { data, error } = await supabase.from('reminders').select('*').order('created_at', { ascending: false });
+         if (data) {
+           setReminders(data.map((d: any) => ({
+             id: d.id,
+             text: d.text,
+             color: ["bg-yellow-500/20", "bg-blue-500/20", "bg-pink-500/20", "bg-emerald-500/20", "bg-purple-500/20"][Math.floor(Math.random()*5)],
+             author: d.author_id || "Anônimo"
+           })));
+         }
+         if (error) console.error("Realtime Reminders Error:", error);
       }).subscribe();
 
     // 7. Monitor de Reuniões v2.6 (Notificação 15min antes)
