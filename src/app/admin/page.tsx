@@ -193,18 +193,19 @@ export default function AdminDashboard() {
                   </div>
                 </div>
 
-                <div className="overflow-x-auto">
+                {/* VIEW DESKTOP (TABELA) */}
+                <div className="hidden md:block overflow-x-auto">
                   <table className="w-full text-left text-sm">
                     <thead>
                       <tr className="text-zinc-500 border-b border-white/5">
                         <th className="pb-3 font-medium">Usuário</th>
                         <th className="pb-3 font-medium">Nível de Acesso</th>
-                        <th className="pb-3 font-medium">Data de Entrada</th>
+                        <th className="pb-3 font-medium">Data de Integração</th>
                         <th className="pb-3 font-medium text-right">Ações</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {activeUsers.filter(u => u.name.toLowerCase().includes(searchTerm.toLowerCase()) || u.email.toLowerCase().includes(searchTerm.toLowerCase())).map(user => (
+                      {activeUsers.filter(u => u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || u.email?.toLowerCase().includes(searchTerm.toLowerCase())).map(user => (
                         <tr key={user.id} className="border-b border-white/5 last:border-0 hover:bg-white/[0.02] transition-colors">
                           <td className="py-4">
                             <p className="font-semibold text-zinc-200">{user.full_name}</p>
@@ -227,6 +228,38 @@ export default function AdminDashboard() {
                       ))}
                     </tbody>
                   </table>
+                </div>
+
+                {/* VIEW MOBILE (CARDS) */}
+                <div className="md:hidden grid grid-cols-1 gap-4">
+                  {activeUsers.filter(u => u.full_name?.toLowerCase().includes(searchTerm.toLowerCase()) || u.email?.toLowerCase().includes(searchTerm.toLowerCase())).map(user => (
+                    <div key={user.id} className="bg-[#121212] p-6 rounded-[32px] border border-white/5 flex flex-col gap-6 relative overflow-hidden group">
+                       <div className="absolute top-0 right-0 w-24 h-24 bg-[#7c3AED]/5 blur-2xl pointer-events-none" />
+                       <div className="flex justify-between items-start">
+                          <div>
+                            <p className="font-black text-white text-lg tracking-tight mb-0.5">{user.full_name}</p>
+                            <p className="text-xs text-zinc-500 font-medium mb-4">{user.email}</p>
+                            <span className={`px-3 py-1 rounded-lg text-[9px] font-black uppercase tracking-widest ${
+                              user.role === 'admin' ? 'bg-purple-500/20 text-purple-300 border border-purple-500/30' :
+                              user.role === 'editor' ? 'bg-blue-500/20 text-blue-300 border border-blue-500/30' :
+                              'bg-zinc-800 text-zinc-300 border border-white/10'
+                            }`}>
+                              Nível {user.role}
+                            </span>
+                          </div>
+                          <div className="text-right">
+                            <p className="text-[9px] font-black text-zinc-600 uppercase tracking-widest mb-1">Entrada</p>
+                            <p className="text-xs font-bold text-zinc-400">{new Date(user.created_at).toLocaleDateString()}</p>
+                          </div>
+                       </div>
+                       <button 
+                         onClick={() => handleEditClick(user)} 
+                         className="w-full py-4 bg-[#7c3AED]/10 hover:bg-[#7c3AED] border border-[#7c3AED]/20 text-[#7c3AED] hover:text-white rounded-2xl text-[10px] font-black uppercase tracking-[0.2em] transition-all active:scale-95 shadow-lg shadow-purple-500/5"
+                       >
+                         Gerenciar Acessos
+                       </button>
+                    </div>
+                  ))}
                 </div>
               </div>
 

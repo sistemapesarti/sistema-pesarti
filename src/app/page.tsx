@@ -55,6 +55,7 @@ import {
 import Link from "next/link";
 import { GoogleGenerativeAI } from "@google/generative-ai";
 import { supabase } from "@/lib/supabase";
+import DOMPurify from 'dompurify';
 
 // Map para persistência de ícones (Serialização)
 const ICON_MAP: Record<string, any> = {
@@ -604,6 +605,12 @@ export default function PesartiBoard() {
          }
       }).subscribe();
 
+    const channelBrainstorm = supabase.channel('realtime_brainstorm')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_brainstorm' }, async () => {
+         const { data } = await supabase.from('pesarti_brainstorm').select('*');
+         if (data) setBrainstormMaps(data);
+      }).subscribe();
+
     // 2. Escutar Reuniões
     const channelMeet = supabase.channel('realtime_meetings')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_meetings' }, async () => {
@@ -611,20 +618,16 @@ export default function PesartiBoard() {
          if (data) setMeetings(data);
       }).subscribe();
 
-    // 3. Escutar Chat Geral
-    const channelChat = supabase.channel('realtime_chat')
-      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'pesarti_chat' }, (payload) => {
-         const newMsg = {
-           id: payload.new.id,
-           userId: payload.new.user_id, // Mapeando de volta p/ camelCase
-           text: payload.new.text,
-           timestamp: payload.new.timestamp,
-           targetCardId: payload.new.target_card_id
-         };
-         setChatMessages(prev => {
-            if (prev.find(m => m.id === newMsg.id)) return prev;
-            return [...prev, newMsg as BoardChatMessage];
-         });
+    // 3. Escutar Chat Geral - v2.6 Sincronismo Total
+    const channelChat = supabase.channel('realtime_chat_v26')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pesarti_chat' }, async () => {
+          // Busca garantida pela coluna 'timestamp' (que usamos no insert)
+          const { data: msgs } = await supabase.from('pesarti_chat').select('*').order('timestamp', { ascending: true });
+          if (msgs) {
+            setChatMessages(msgs.map((m: any) => ({
+              id: m.id, userId: m.user_id, text: m.text, timestamp: m.timestamp, targetCardId: m.target_card_id
+            })));
+          }
       }).subscribe();
 
     // 4. Escutar Pedidos Site
@@ -648,13 +651,43 @@ export default function PesartiBoard() {
          if (data) setReminders(data);
       }).subscribe();
 
+    // 7. Monitor de Reuniões v2.6 (Notificação 15min antes)
+    const checkMeetings = () => {
+       if (typeof window === 'undefined') return;
+       // Pede permissão se necessário
+       if (Notification.permission === "default") Notification.requestPermission();
+       if (Notification.permission !== "granted") return;
+       
+       const now = new Date();
+       meetings.forEach(m => {
+          const [mYear, mMonth, mDay] = m.date.split('-').map(Number);
+          const [mHour, mMin] = m.time.split(':').map(Number);
+          const meetDate = new Date(mYear, mMonth-1, mDay, mHour, mMin);
+          const diffMin = (meetDate.getTime() - now.getTime()) / (1000 * 60);
+          
+          if (diffMin > 0 && diffMin <= 15) {
+             const key = `notified_${m.id}`;
+             if (!localStorage.getItem(key)) {
+                new Notification(`Pesarti: Reunião em ${Math.round(diffMin)}min`, {
+                   body: m.title,
+                   icon: "/logo-pesarti-v2.png"
+                });
+                localStorage.setItem(key, "viva");
+             }
+          }
+       });
+    };
+    const meetInterval = setInterval(checkMeetings, 60000); // Checa a cada minuto
+
     return () => {
+      clearInterval(meetInterval);
       supabase.removeChannel(channelCat);
       supabase.removeChannel(channelMeet);
       supabase.removeChannel(channelChat);
       supabase.removeChannel(channelOrders);
       supabase.removeChannel(channelFinance);
       supabase.removeChannel(channelReminders);
+      supabase.removeChannel(channelBrainstorm);
     };
   }, []);
 
@@ -792,16 +825,28 @@ export default function PesartiBoard() {
         return;
       }
     }
-    const newMsg = { id: msgId, userId: 'u1', text, timestamp };
+    // Identidade do dispositivo / usuário
+    const actualUserId = typeof window !== 'undefined' ? (localStorage.getItem('pesarti_user_id') || 'u1') : 'u1';
+    
+    // Sanitização XSS v2.6
+    const cleanText = DOMPurify.sanitize(text);
+    
+    const newMsg = { id: msgId, userId: actualUserId, text: cleanText, timestamp };
     const msgToDb = { 
       id: msgId, 
-      user_id: 'u1', 
-      text, 
+      user_id: actualUserId, 
+      text: cleanText, 
       timestamp, 
       target_card_id: (newMsg as any).targetCardId || null 
     };
+    
+    // Atualiza local e envia p/ nuvem
     setChatMessages(prev => [...prev, newMsg]);
-    await supabase.from('pesarti_chat').insert([msgToDb]);
+    try {
+      await supabase.from('pesarti_chat').insert([msgToDb]);
+    } catch (e) {
+      console.error("Chat sync error:", e);
+    }
   };
 
   const handleSendAiPrompt = async () => {
@@ -1036,8 +1081,18 @@ export default function PesartiBoard() {
                 <BrainstormModule
                   maps={brainstormMaps}
                   onSaveMaps={async (updated: BrainstormMap[]) => {
-                    setBrainstormMaps(updated);
-                    for(const m of updated) await supabase.from('pesarti_brainstorm').upsert({
+                    // Sanitização XSS v2.6 nos mapas
+                    const sanitized = updated.map(m => ({
+                      ...m,
+                      title: DOMPurify.sanitize(m.title),
+                      chatMessages: (m.chatMessages || []).map(msg => ({
+                        ...msg,
+                        text: DOMPurify.sanitize(msg.text)
+                      }))
+                    }));
+                    
+                    setBrainstormMaps(sanitized);
+                    for(const m of sanitized) await supabase.from('pesarti_brainstorm').upsert({
                       id: m.id,
                       title: m.title,
                       nodes: m.nodes,
@@ -1266,77 +1321,78 @@ export default function PesartiBoard() {
       <AnimatePresence>
         {isAiPanelOpen && (
           <>
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAiPanelOpen(false)} className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[200]" />
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={() => setIsAiPanelOpen(false)} className="fixed inset-0 bg-black/60 backdrop-blur-md z-[500]" />
             <motion.div 
                initial={{ x: '100%' }} animate={{ x: 0 }} exit={{ x: '100%' }} transition={{ type: 'spring', damping: 25, stiffness: 200 }}
-               className="fixed top-0 right-0 w-[450px] max-w-[90vw] h-full bg-[#0d0d0f] border-l border-white/10 shadow-[0_0_50px_rgba(217,70,239,0.1)] z-[201] flex flex-col"
+               className="fixed top-0 right-0 w-full lg:w-[450px] h-full bg-[#0d0d0f] border-l border-white/10 shadow-2xl z-[501] flex flex-col"
             >
-               <div className="p-6 border-b border-white/5 flex items-center justify-between shadow-2xl z-10">
+               <div className="p-6 border-b border-white/5 flex items-center justify-between shadow-xl bg-[#0d0d0f]/80 backdrop-blur-xl sticky top-0 z-20">
                   <div className="flex items-center gap-4">
                      <div className="w-12 h-12 bg-gradient-to-br from-fuchsia-600 to-indigo-600 rounded-2xl flex items-center justify-center text-white shadow-lg shadow-fuchsia-600/20">
                         <Sparkles size={24} />
                      </div>
                      <div>
-                        <h3 className="text-lg font-black text-white leading-tight">Pesarti AI</h3>
-                        <p className="text-[10px] font-bold text-fuchsia-400 uppercase tracking-widest flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Google Gemini API</p>
+                        <h3 className="text-lg font-black text-white leading-tight">Copiloto Pesarti</h3>
+                        <p className="text-[10px] font-bold text-fuchsia-400 uppercase tracking-widest flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></span> Sistema Online</p>
                      </div>
                   </div>
                   <button onClick={() => setIsAiPanelOpen(false)} className="p-3 bg-white/5 hover:bg-white/10 rounded-xl text-zinc-400 hover:text-white transition-all"><X size={20}/></button>
                </div>
 
-               {!aiKey ? (
-                  <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-fuchsia-500/5">
-                     <div className="w-20 h-20 bg-fuchsia-500/10 rounded-full flex items-center justify-center text-fuchsia-500 mb-6 border border-fuchsia-500/30">
-                        <Key size={32} />
-                     </div>
-                     <h4 className="text-xl font-black text-white mb-2">Conecte sua Inteligência</h4>
-                     <p className="text-sm text-zinc-400 mb-8 max-w-xs">Para conversar e ativar a memória contextuada da agência, conecte sua chave grátis do Google AI Studio.</p>
-                     
-                     <input type="password" id="pesarti_ai_key_input" placeholder="Cole a API Key..." className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-fuchsia-500 mb-4 font-mono text-xs" />
-                     <button onClick={() => {
-                       const val = (document.getElementById('pesarti_ai_key_input') as HTMLInputElement).value;
-                       if(val) handleSaveAiKey(val);
-                     }} className="w-full py-4 bg-gradient-to-r from-fuchsia-600 to-indigo-600 hover:from-fuchsia-500 hover:to-indigo-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl active:scale-95 transition-all">Ativar Cérebro AI</button>
-                  </div>
-               ) : (
-                  <div className="flex-1 flex flex-col overflow-hidden">
-                     <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar bg-gradient-to-b from-[#0d0d0f] to-fuchsia-900/5">
-                        {aiMessages.length === 0 && (
-                          <div className="text-center mt-20">
-                            <Sparkles size={48} className="text-fuchsia-500/20 mx-auto mb-6" />
-                            <p className="text-zinc-500 font-medium leading-relaxed">O Copiloto da Pesarti está pronto <br/>e de olho na sua tela.<br/>Peça drafts ou gere conteúdos!</p>
+               <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar pb-32">
+                 {!aiKey ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                       <div className="w-20 h-20 bg-fuchsia-500/10 rounded-full flex items-center justify-center text-fuchsia-500 mb-6 border border-fuchsia-500/30">
+                          <Key size={32} />
+                       </div>
+                       <h4 className="text-xl font-black text-white mb-2">Conecte sua Inteligência</h4>
+                       <p className="text-sm text-zinc-400 mb-8 max-w-xs">Cole sua chave do Google AI Studio para ativar o cérebro da agência.</p>
+                       <input type="password" id="pesarti_ai_key_input" placeholder="Cole a API Key..." className="w-full bg-black/60 border border-white/10 rounded-2xl p-4 text-white outline-none focus:border-fuchsia-500 mb-4 font-mono text-xs" />
+                       <button onClick={() => {
+                         const val = (document.getElementById('pesarti_ai_key_input') as HTMLInputElement).value;
+                         if(val) handleSaveAiKey(val);
+                       }} className="w-full py-4 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-xl transition-all">Ativar Cérebro AI</button>
+                    </div>
+                 ) : (
+                    <>
+                       {aiMessages.length === 0 && (
+                         <div className="text-center mt-20">
+                           <Sparkles size={48} className="text-fuchsia-500/20 mx-auto mb-6" />
+                           <p className="text-zinc-500 font-medium leading-relaxed uppercase text-[10px] tracking-[0.2em]">Copiloto pronto para briefings.</p>
+                         </div>
+                       )}
+                       {aiMessages.map((msg, i) => (
+                          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                             <div className={`max-w-[85%] p-4 rounded-3xl ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white/5 border border-white/10 text-zinc-300 rounded-bl-none shadow-xl whitespace-pre-wrap text-[13px]'}`}>
+                                {msg.text}
+                             </div>
                           </div>
-                        )}
-                        {aiMessages.map((msg, i) => (
-                           <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                              <div className={`max-w-[85%] p-4 rounded-3xl ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-white/5 border border-white/10 text-zinc-300 rounded-bl-none shadow-xl leading-relaxed whitespace-pre-wrap text-[13px] font-medium'}`}>
-                                 {msg.text}
-                              </div>
-                           </div>
-                        ))}
-                        {isAiTyping && (
-                           <div className="flex justify-start">
-                              <div className="bg-white/5 border border-white/10 p-4 rounded-3xl rounded-bl-none flex gap-2 items-center">
-                                 <Loader2 size={16} className="text-fuchsia-500 animate-spin" />
-                                 <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Pensando...</span>
-                              </div>
-                           </div>
-                        )}
-                     </div>
+                       ))}
+                       {isAiTyping && (
+                          <div className="flex justify-start">
+                             <div className="bg-white/5 border border-white/10 p-4 rounded-3xl rounded-bl-none flex gap-2 items-center">
+                                <Loader2 size={16} className="text-fuchsia-500 animate-spin" />
+                                <span className="text-xs font-bold text-zinc-500 uppercase tracking-widest">Pensando...</span>
+                             </div>
+                          </div>
+                       )}
+                    </>
+                 )}
+               </div>
 
-                     <div className="p-6 border-t border-white/5 bg-[#0d0d0f] shadow-2xl z-10 flex-shrink-0">
-                        <div className="flex gap-3">
-                           <input 
-                              value={aiInput} 
-                              onChange={(e) => setAiInput(e.target.value)}
-                              onKeyDown={(e) => { if (e.key === 'Enter') handleSendAiPrompt(); }}
-                              placeholder="Fale com a IA..." 
-                              className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-fuchsia-500 transition-colors"
-                           />
-                           <button onClick={handleSendAiPrompt} disabled={isAiTyping || !aiInput.trim()} className="p-4 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-2xl disabled:opacity-50 disabled:active:scale-100 active:scale-95 transition-all shadow-xl shadow-fuchsia-600/20"><Send size={20} /></button>
-                        </div>
-                     </div>
-                  </div>
+               {aiKey && (
+                 <div className="p-6 bg-[#0d0d0f] border-t border-white/5 absolute bottom-0 left-0 right-0 z-30">
+                    <div className="flex gap-3">
+                       <input 
+                          value={aiInput} 
+                          onChange={(e) => setAiInput(e.target.value)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSendAiPrompt(); }}
+                          placeholder="Fale com a IA..." 
+                          className="flex-1 bg-white/5 border border-white/10 rounded-2xl px-5 py-4 text-white outline-none focus:border-fuchsia-500 transition-colors"
+                       />
+                       <button onClick={handleSendAiPrompt} disabled={isAiTyping || !aiInput.trim()} className="p-4 bg-fuchsia-600 hover:bg-fuchsia-500 text-white rounded-2xl disabled:opacity-50 active:scale-95 transition-all"><Send size={20} /></button>
+                    </div>
+                 </div>
                )}
             </motion.div>
           </>
@@ -1659,7 +1715,7 @@ function TrelloBoardView({ topic, parentTitle, onClose, onUpdate }: { topic: Top
         </div>
       </div>
 
-      <div className="flex-1 flex gap-8 overflow-x-auto pb-12 custom-scrollbar">
+      <div className="flex-1 flex gap-4 md:gap-8 overflow-x-auto pb-12 custom-scrollbar snap-x snap-mandatory">
         {columns.map(colId => (
           <KanbanColumn
             key={colId}
@@ -1700,7 +1756,7 @@ function KanbanColumn({ id, label, cards, onAdd, onCardClick, onDrop }: { id: Ca
         const subId = e.dataTransfer.getData("subId");
         if (subId) onDrop(subId);
       }}
-      className={`w-80 flex-shrink-0 flex flex-col h-full bg-[#111113]/60 rounded-[40px] border transition-all ${isOver ? 'border-blue-500/50 bg-blue-500/5 scale-[1.02]' : 'border-white/5'} p-6`}
+      className={`w-[85vw] md:w-80 snap-center flex-shrink-0 flex flex-col h-full bg-[#111113]/60 rounded-[40px] border transition-all ${isOver ? 'border-blue-500/50 bg-blue-500/5 scale-[1.02]' : 'border-white/5'} p-6 shadow-2xl relative overflow-hidden`}
     >
       <div className="flex items-center justify-between mb-6">
         <h3 className="font-bold text-xs uppercase tracking-widest text-zinc-500 flex items-center gap-3">
@@ -1795,10 +1851,21 @@ function SubCardModal({ sub, onClose, onUpdate, onDelete }: { sub: SubCard, onCl
   };
 
   return (
-    <div className="fixed inset-0 z-[100] flex items-center justify-center p-6">
+    <div className="fixed inset-0 z-[100] flex items-end md:items-center justify-center">
       <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose} className="absolute inset-0 bg-black/90 backdrop-blur-xl" />
-      <motion.div initial={{ scale: 0.9, opacity: 0, y: 50 }} animate={{ scale: 1, opacity: 1, y: 0 }} exit={{ scale: 0.9, opacity: 0, y: 50 }} className="relative w-full max-w-4xl bg-[#0d0d0f] border border-white/10 rounded-[60px] shadow-2xl overflow-hidden max-h-[90vh] flex flex-col">
-        <div className="p-10 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-blue-500/5 to-transparent">
+      <motion.div 
+        initial={{ y: "100%", opacity: 0 }} 
+        animate={{ y: 0, opacity: 1 }} 
+        exit={{ y: "100%", opacity: 0 }} 
+        transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+        className="relative w-full md:max-w-4xl bg-[#0d0d0f] border-t md:border border-white/10 rounded-t-[40px] md:rounded-[60px] shadow-2xl overflow-hidden h-[92vh] md:h-auto md:max-h-[85vh] flex flex-col"
+      >
+        {/* Barra de Arrastre Mobile */}
+        <div className="md:hidden flex justify-center py-4">
+          <div className="w-12 h-1.5 bg-white/10 rounded-full" />
+        </div>
+
+        <div className="p-6 md:p-10 border-b border-white/5 flex items-center justify-between bg-gradient-to-r from-blue-500/5 to-transparent">
           <div className="flex items-center gap-4 text-blue-400">
             <FolderKanban size={24} />
             <span className="text-xs font-bold uppercase tracking-[0.3em]">Demanda Estratégica</span>
@@ -1809,10 +1876,14 @@ function SubCardModal({ sub, onClose, onUpdate, onDelete }: { sub: SubCard, onCl
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-12 space-y-12 custom-scrollbar">
-          <input value={sub.title} onChange={e => onUpdate({ ...sub, title: e.target.value })} className="w-full bg-transparent text-4xl font-bold text-white border-none outline-none focus:ring-0 px-0" />
+        <div className="flex-1 overflow-y-auto p-6 md:p-12 space-y-8 md:space-y-12 custom-scrollbar">
+          <input 
+            value={sub.title} 
+            onChange={e => onUpdate({ ...sub, title: e.target.value })} 
+            className="w-full bg-transparent text-2xl md:text-4xl font-black text-white border-none outline-none focus:ring-0 px-0 line-clamp-2 md:line-clamp-none leading-tight" 
+          />
 
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-8">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8">
             <div>
               <label className="text-[10px] uppercase font-bold text-zinc-500 tracking-widest mb-4 block">Responsável</label>
               <div className="flex items-center gap-4 bg-white/5 p-4 rounded-3xl border border-white/5 relative">
@@ -2083,8 +2154,8 @@ function UserReportModal({ userId, categories, onClose }: { userId: string, cate
 // --- GAMIFIED DASHBOARD HOME ---
 
 function GamifiedDashboardHome({ categories, users, meetings, messages, onSendMessage }: any) {
-  const allSubCards = categories.flatMap((cat:any) => cat.cards.flatMap((c:any) => c.topics.flatMap((t:any) => t.subCards)));
-  const overdue = allSubCards.filter((s:any) => new Date(s.dueDate) < new Date() && s.status !== 'done');
+  const allSubCards = (categories || []).flatMap((cat:any) => (cat.cards || []).flatMap((c:any) => (c.topics || []).flatMap((t:any) => (t.subCards || []))));
+  const overdue = allSubCards.filter((s:any) => s.status !== 'done' && (s.dueDate ? new Date(s.dueDate) < new Date() : false));
   const doing = allSubCards.filter((s:any) => s.status === 'doing');
   const done = allSubCards.filter((s:any) => s.status === 'done');
   const total = allSubCards.length;
@@ -2095,18 +2166,18 @@ function GamifiedDashboardHome({ categories, users, meetings, messages, onSendMe
   return (
     <div className="flex flex-col gap-8 w-full">
         {/* Banner Gamificado */}
-        <div className="relative bg-[#18181b] rounded-[40px] p-6 md:p-10 border border-white/5 overflow-hidden shadow-2xl group">
+        <div className="relative bg-[#18181b] rounded-[40px] p-10 border border-white/5 overflow-hidden shadow-2xl group">
            <div className="absolute top-0 right-0 w-[50%] h-[150%] bg-gradient-to-l from-indigo-600/20 to-transparent blur-3xl pointer-events-none group-hover:from-fuchsia-600/20 transition-all duration-1000" />
            <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-8">
              <div>
-               <h2 className="text-3xl md:text-4xl font-black text-white tracking-tighter mb-4">Cockpit Estratégico</h2>
-               <p className="text-sm text-zinc-400 max-w-xl font-medium leading-relaxed">Visão global da equipe de Marketing e Produção Pesarti. Acompanhe quadros, conversões e fluxo de ponta a ponta.</p>
+               <h2 className="text-4xl font-black text-white tracking-tighter mb-4">Cockpit Estratégico</h2>
+               <p className="text-sm text-zinc-400 max-w-xl">Visão global da equipe de Marketing e Produção Pesarti. Acompanhe quadros, conversões e fluxo de ponta a ponta.</p>
              </div>
              
-             <div className="flex flex-col gap-3 min-w-[200px] w-full md:w-auto">
-                <span className="text-[10px] font-black uppercase tracking-[0.3em] text-zinc-500">Global Score (XP)</span>
-                <div className="flex items-end gap-3">
-                  <span className="text-4xl md:text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter leading-none">{progress}%</span>
+             <div className="flex flex-col gap-2 min-w-[200px]">
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-500">Global Score (XP)</span>
+                <div className="flex items-end gap-3 mb-2">
+                  <span className="text-5xl font-black text-transparent bg-clip-text bg-gradient-to-r from-blue-400 to-indigo-500 tracking-tighter">{progress}%</span>
                 </div>
                 <div className="w-full h-3 bg-black/50 rounded-full border border-white/5 overflow-hidden p-0.5">
                    <motion.div initial={{width:0}} animate={{width:`${progress}%`}} transition={{duration:1.5, delay:0.2, type:'spring'}} className="h-full bg-gradient-to-r from-blue-500 to-indigo-500 rounded-full shadow-[0_0_15px_rgba(99,102,241,0.6)]" />
@@ -2115,34 +2186,34 @@ function GamifiedDashboardHome({ categories, users, meetings, messages, onSendMe
            </div>
         </div>
 
-        {/* Stats em Caixas Neon */}
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-           <div className="bg-[#121212] rounded-[32px] p-8 border border-white/5 hover:border-blue-500/30 transition-all flex flex-col justify-between group overflow-hidden relative">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/5 blur-2xl rounded-full group-hover:bg-blue-500/10 transition-all" />
-              <div className="w-12 h-12 rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center mb-6 shadow-lg shadow-blue-500/5"><Activity size={24} /></div>
-              <div className="text-5xl font-black text-white tracking-tighter mb-1 relative z-10">{doing.length}</div>
-              <div className="text-[10px] font-black uppercase text-zinc-500 tracking-widest relative z-10">Missões Abertas</div>
+        {/* Stats em Caixas Neon v2.6 */}
+        <div className="grid grid-cols-2 md:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6 px-2 md:px-0">
+           <div className="bg-[#121212] rounded-[24px] md:rounded-[32px] p-5 md:p-8 border border-white/5 hover:border-blue-500/30 transition-all flex flex-col justify-between group overflow-hidden相对">
+              <div className="absolute top-0 right-0 w-24 md:w-32 h-24 md:h-32 bg-blue-500/5 blur-2xl rounded-full" />
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-blue-500/10 text-blue-400 flex items-center justify-center mb-4 md:mb-6"><Activity size={20} /></div>
+              <div className="text-3xl md:text-5xl font-black text-white tracking-tighter mb-1 select-none">{doing.length}</div>
+              <div className="text-[8px] md:text-[10px] font-black uppercase text-zinc-500 tracking-widest">Missões</div>
            </div>
            
-           <div className="bg-[#121212] rounded-[32px] p-8 border border-white/5 hover:border-emerald-500/30 transition-all flex flex-col justify-between group overflow-hidden relative">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/5 blur-2xl rounded-full group-hover:bg-emerald-500/10 transition-all" />
-              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-6 shadow-lg shadow-emerald-500/5"><CheckCircle2 size={24} /></div>
-              <div className="text-5xl font-black text-white tracking-tighter mb-1 relative z-10">{done.length}</div>
-              <div className="text-[10px] font-black uppercase text-zinc-500 tracking-widest relative z-10">Metas Batidas</div>
+           <div className="bg-[#121212] rounded-[24px] md:rounded-[32px] p-5 md:p-8 border border-white/5 hover:border-emerald-500/30 transition-all flex flex-col justify-between group overflow-hidden relative">
+              <div className="absolute top-0 right-0 w-24 md:w-32 h-24 md:h-32 bg-emerald-500/5 blur-2xl rounded-full" />
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center mb-4 md:mb-6"><CheckCircle2 size={20} /></div>
+              <div className="text-3xl md:text-5xl font-black text-white tracking-tighter mb-1 select-none">{done.length}</div>
+              <div className="text-[8px] md:text-[10px] font-black uppercase text-zinc-500 tracking-widest">Concluídas</div>
            </div>
 
-           <div className="bg-[#121212] rounded-[32px] p-8 border border-white/5 hover:border-red-500/30 transition-all flex flex-col justify-between group overflow-hidden relative">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/5 blur-2xl rounded-full group-hover:bg-red-500/10 transition-all" />
-              <div className="w-12 h-12 rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center mb-6 shadow-lg shadow-red-500/5"><AlertCircle size={24} /></div>
-              <div className="text-5xl font-black text-red-400 tracking-tighter mb-1 relative z-10">{overdue.length}</div>
-              <div className="text-[10px] font-black uppercase text-zinc-500 tracking-widest relative z-10">Atenção Necessária</div>
+           <div className="bg-[#121212] rounded-[24px] md:rounded-[32px] p-5 md:p-8 border border-white/5 hover:border-red-500/30 transition-all flex flex-col justify-between group overflow-hidden relative">
+              <div className="absolute top-0 right-0 w-24 md:w-32 h-24 md:h-32 bg-red-500/5 blur-2xl rounded-full" />
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-red-500/10 text-red-400 flex items-center justify-center mb-4 md:mb-6"><AlertCircle size={20} /></div>
+              <div className="text-3xl md:text-5xl font-black text-red-500 tracking-tighter mb-1 select-none">{allSubCards.filter(s => s.status === 'todo').length}</div>
+              <div className="text-[8px] md:text-[10px] font-black uppercase text-zinc-500 tracking-widest">Pendências</div>
            </div>
 
-           <div className="bg-[#121212] rounded-[32px] p-8 border border-white/5 hover:border-pink-500/30 transition-all flex flex-col justify-between group overflow-hidden relative">
-              <div className="absolute top-0 right-0 w-32 h-32 bg-pink-500/5 blur-2xl rounded-full group-hover:bg-pink-500/10 transition-all" />
-              <div className="w-12 h-12 rounded-2xl bg-pink-500/10 text-pink-400 flex items-center justify-center mb-6 shadow-lg shadow-pink-500/5"><Megaphone size={24} /></div>
-              <div className="text-5xl font-black text-white tracking-tighter mb-1 relative z-10">72<span className="text-2xl text-pink-500">%</span></div>
-              <div className="text-[10px] font-black uppercase text-zinc-500 tracking-widest relative z-10">Conv. Tráfego Estimada</div>
+           <div className="bg-[#121212] rounded-[24px] md:rounded-[32px] p-5 md:p-8 border border-white/5 hover:border-pink-500/30 transition-all flex flex-col justify-between group overflow-hidden relative">
+              <div className="absolute top-0 right-0 w-24 md:w-32 h-24 md:h-32 bg-pink-500/5 blur-2xl rounded-full" />
+              <div className="w-10 h-10 md:w-12 md:h-12 rounded-xl md:rounded-2xl bg-pink-500/10 text-pink-400 flex items-center justify-center mb-4 md:mb-6"><Megaphone size={20} /></div>
+              <div className="text-3xl md:text-5xl font-black text-white tracking-tighter mb-1 select-none">{progress}<span className="text-xl md:text-2xl text-pink-500">%</span></div>
+              <div className="text-[8px] md:text-[10px] font-black uppercase text-zinc-500 tracking-widest">Conversão</div>
            </div>
         </div>
 
@@ -2224,13 +2295,13 @@ function GamifiedDashboardHome({ categories, users, meetings, messages, onSendMe
 
 function MeetingsView({ meetings, onAdd, onDelete }: { meetings: Meeting[], onAdd: () => void, onDelete: (id: string) => void }) {
   return (
-    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-6xl mx-auto py-10">
-      <div className="flex flex-col md:flex-row items-center justify-between gap-8 mb-16">
+    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="max-w-6xl mx-auto py-6 md:py-10">
+      <div className="flex flex-col md:flex-row items-center justify-between gap-6 md:gap-8 mb-10 md:mb-16 text-center md:text-left">
         <div>
-          <h2 className="text-5xl font-bold text-white tracking-tighter mb-3 underline decoration-purple-600 decoration-8 underline-offset-8">Reuniões</h2>
-          <p className="text-zinc-500 font-medium tracking-wide">Planejamento e alinhamento da equipe Pesarti</p>
+          <h2 className="text-3xl md:text-5xl font-bold text-white tracking-tighter mb-2 md:mb-3 underline decoration-purple-600 decoration-8 underline-offset-8">Reuniões</h2>
+          <p className="text-xs md:text-zinc-500 font-medium tracking-wide">Planejamento e alinhamento Pesarti</p>
         </div>
-        <button onClick={onAdd} className="bg-white text-black hover:bg-purple-600 hover:text-white px-10 py-5 rounded-[32px] font-bold flex items-center gap-4 shadow-2xl transition-all active:scale-95 text-lg"><Video size={24} /> Agendar Nova Pauta</button>
+        <button onClick={onAdd} className="w-full md:w-auto bg-white text-black hover:bg-purple-600 hover:text-white px-8 py-4 md:px-10 md:py-5 rounded-[28px] md:rounded-[32px] font-bold flex items-center justify-center gap-4 shadow-2xl transition-all active:scale-95 text-sm md:text-lg"><Video size={24} /> Agendar</button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
@@ -2368,7 +2439,7 @@ function GlobalChatPanel({ messages, onSendMessage, onClose }: { messages: Board
       initial={{ opacity: 0, y: 20, scale: 0.95 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 20, scale: 0.95 }}
-      className="fixed inset-0 sm:inset-auto sm:right-8 sm:bottom-28 w-full h-full sm:w-[400px] sm:h-[600px] glass-panel bg-[#09090b]/95 backdrop-blur-3xl border border-white/10 flex flex-col z-[100] shadow-[0_30px_80px_rgba(0,0,0,0.8)] sm:rounded-[40px] overflow-hidden"
+      className="w-[400px] h-[600px] glass-panel bg-[#09090b]/95 backdrop-blur-3xl border border-white/10 flex flex-col z-[100] shadow-[0_30px_80px_rgba(0,0,0,0.8)] rounded-[40px] overflow-hidden"
     >
       <div className="p-8 border-b border-white/5 flex items-center justify-between bg-purple-600/5">
         <div>
@@ -2465,6 +2536,22 @@ function FinanceView({ items, onUpdate, onDelete }: { items: FinanceItem[], onUp
   const [activeSubTab, setActiveSubTab] = useState('dashboard');
   const [activeItem, setActiveItem] = useState<any|null>(null);
 
+  const exportToCSV = () => {
+    const headers = ["ID", "Nome/Serviço", "Tag", "Valor", "Status", "Email", "Telefone"];
+    const rows = items.map(i => [i.id, i.name, i.tag, i.val, i.status, i.email || "", i.phone || ""]);
+    const csvContent = "data:text/csv;charset=utf-8,\uFEFF" 
+      + headers.join(",") + "\n"
+      + rows.map(e => e.join(",")).join("\n");
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.style.display = 'none';
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `financeiro_pesarti_${new Date().toLocaleDateString('pt-BR').replace(/\//g, '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleAdd = () => {
     const p = prompt("Nome do Contato ou Despesa:");
     if(!p) return;
@@ -2481,7 +2568,12 @@ function FinanceView({ items, onUpdate, onDelete }: { items: FinanceItem[], onUp
           <h2 className="text-5xl font-bold text-white tracking-tighter mb-3 underline decoration-emerald-600 decoration-8 underline-offset-8">CRM Financeiro</h2>
           <p className="text-zinc-500 font-medium tracking-wide">Dashboard da Loja, Contatos, Custos e Caixa da Empresa</p>
         </div>
-        <button onClick={handleAdd} className="bg-emerald-600 text-white hover:bg-emerald-500 px-8 py-4 rounded-[28px] font-bold flex items-center gap-3 shadow-2xl transition-all active:scale-95 text-sm shadow-emerald-500/10"><Plus size={20} /> Adicionar Manual</button>
+        <div className="flex flex-col md:flex-row items-center gap-4">
+          <button onClick={exportToCSV} className="bg-white/5 hover:bg-white/10 border border-white/10 text-zinc-300 hover:text-white px-6 py-4 rounded-[28px] font-bold flex items-center gap-2 transition-all active:scale-95 text-xs">
+            <FileText size={18} /> Exportar Relatório 
+          </button>
+          <button onClick={handleAdd} className="bg-emerald-600 text-white hover:bg-emerald-500 px-8 py-4 rounded-[28px] font-bold flex items-center gap-3 shadow-2xl transition-all active:scale-95 text-sm shadow-emerald-500/10"><Plus size={20} /> Adicionar Manual</button>
+        </div>
       </div>
 
       <div className="flex gap-4 mb-4 overflow-x-auto pb-4 custom-scrollbar flex-shrink-0">
@@ -2501,25 +2593,33 @@ function FinanceView({ items, onUpdate, onDelete }: { items: FinanceItem[], onUp
       <div className="flex-1 bg-[#121212] rounded-[40px] border border-white/5 p-8 flex flex-col relative overflow-hidden">
         {activeSubTab === 'dashboard' && (
           <div className="w-full h-full flex flex-col gap-6 overflow-y-auto custom-scrollbar pr-4">
-             {/* Estatísticas Topo */}
+             {/* Estatísticas Topo v2.6 Dinâmicas */}
              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 <div className="p-8 bg-black/40 border border-white/5 rounded-3xl relative overflow-hidden group">
                    <div className="absolute top-0 right-0 w-32 h-32 bg-emerald-500/10 blur-3xl" />
-                   <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Faturamento / Últimos 30 dias</p>
-                   <h3 className="text-4xl font-black text-emerald-500">R$ 14.280,00</h3>
-                   <p className="text-xs text-emerald-400 font-bold mt-2">+12% vs. mês anterior</p>
+                   <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Faturamento / Estimado</p>
+                   <h3 className="text-4xl font-black text-emerald-500">
+                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                       items.filter(i => i.status === 'dashboard' || i.status === 'orcamentos').reduce((acc, curr) => acc + (parseFloat(curr.val.replace(/[^\d.,]/g, '').replace(',', '.')) || 0), 0)
+                     )}
+                   </h3>
+                   <p className="text-xs text-emerald-400 font-bold mt-2">Baseado em Orçamentos/Receitas</p>
                 </div>
                 <div className="p-8 bg-black/40 border border-white/5 rounded-3xl relative overflow-hidden group">
                    <div className="absolute top-0 right-0 w-32 h-32 bg-red-500/10 blur-3xl" />
-                   <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Contas a Pagar / Este Mês</p>
-                   <h3 className="text-4xl font-black text-red-500">R$ 3.840,50</h3>
-                   <div className="mt-2 text-xs font-bold bg-red-500/20 text-red-400 px-3 py-1 rounded-lg inline-block border border-red-500/20">2 Vencem Hoje!</div>
+                   <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Contas a Pagar / Estimado</p>
+                   <h3 className="text-4xl font-black text-red-500">
+                     {new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(
+                       items.filter(i => i.status === 'contas' || i.status === 'custos').reduce((acc, curr) => acc + (parseFloat(curr.val.replace(/[^\d.,]/g, '').replace(',', '.')) || 0), 0)
+                     )}
+                   </h3>
+                   <div className="mt-2 text-xs font-bold bg-red-500/20 text-red-400 px-3 py-1 rounded-lg inline-block border border-red-500/20">Monitoramento Ativo</div>
                 </div>
                 <div className="p-8 bg-black/40 border border-white/5 rounded-3xl relative overflow-hidden group">
                    <div className="absolute top-0 right-0 w-32 h-32 bg-blue-500/10 blur-3xl" />
-                   <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Ticket Médio / Loja</p>
-                   <h3 className="text-4xl font-black text-white">R$ 241,52</h3>
-                   <p className="text-xs text-zinc-500 font-bold mt-2">Média segmento: R$ 296,71</p>
+                   <p className="text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-2">Volume de Contatos (CRM)</p>
+                   <h3 className="text-4xl font-black text-white">{items.filter(i => i.status === 'fornecedores').length}</h3>
+                   <p className="text-xs text-zinc-500 font-bold mt-2">Contatos registrados na agência</p>
                 </div>
              </div>
 

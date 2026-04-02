@@ -14,11 +14,19 @@ export interface MindMapNode {
     depth: number;
 }
 
+export interface BrainstormHistory {
+    id: string;
+    action: string;
+    userId: string;
+    timestamp: string;
+}
+
 export interface BrainstormMap {
     id: string;
     title: string;
     nodes: MindMapNode[];
     chatMessages: ChatMessage[];
+    history?: BrainstormHistory[];
     createdAt: string;
     updatedAt: string;
 }

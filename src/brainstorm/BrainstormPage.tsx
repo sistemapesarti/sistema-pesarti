@@ -4,6 +4,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, X, MessageSquare, Send, ArrowLeft, MoreVertical, Layout, PlusCircle, Maximize2, ChevronLeft, ChevronRight, GripVertical, ZoomIn, ZoomOut, Search } from 'lucide-react';
 import { BrainstormMap, MindMapNode, ChatMessage } from './data/types';
+import DOMPurify from 'dompurify';
 
 export function BrainstormModule({
     maps,
@@ -43,7 +44,11 @@ export function BrainstormModule({
         setActiveMapId(newMap.id);
     };
 
-    const updateMap = (updated: BrainstormMap) => {
+    const updateMap = (updated: BrainstormMap, logAction?: string) => {
+        if (logAction) {
+            const history = updated.history || [];
+            updated.history = [...history, { id: `hist_${Date.now()}`, action: logAction, userId: 'u1', timestamp: new Date().toISOString() }];
+        }
         onSaveMaps(maps.map(m => m.id === updated.id ? updated : m));
     };
 
@@ -120,7 +125,7 @@ export function BrainstormModule({
     );
 }
 
-function MindMapEditor({ map, onClose, onUpdate, sidebarMode, setSidebarMode }: { map: BrainstormMap, onClose: () => void, onUpdate: (m: BrainstormMap) => void, sidebarMode: 'expanded' | 'collapsed' | 'hidden', setSidebarMode: (m: 'expanded' | 'collapsed' | 'hidden') => void }) {
+function MindMapEditor({ map, onClose, onUpdate, sidebarMode, setSidebarMode }: { map: BrainstormMap, onClose: () => void, onUpdate: (m: BrainstormMap, log?: string) => void, sidebarMode: 'expanded' | 'collapsed' | 'hidden', setSidebarMode: (m: 'expanded' | 'collapsed' | 'hidden') => void }) {
     const [editingNodeId, setEditingNodeId] = useState<string | null>(null);
     const [selectedNodeId, setSelectedNodeId] = useState<string>('root');
     const [chatOpen, setChatOpen] = useState(false);
@@ -198,7 +203,7 @@ function MindMapEditor({ map, onClose, onUpdate, sidebarMode, setSidebarMode }: 
             depth: node.depth
         };
         const updated = { ...map, nodes: [...map.nodes, newNode], updatedAt: new Date().toISOString() };
-        onUpdate(updated);
+        onUpdate(updated, `Adicionou ideia: ${newNode.text}`);
         setSelectedNodeId(newNode.id);
         setEditingNodeId(newNode.id);
     };
@@ -212,7 +217,7 @@ function MindMapEditor({ map, onClose, onUpdate, sidebarMode, setSidebarMode }: 
             depth: node.depth + 1
         };
         const updated = { ...map, nodes: [...map.nodes, newNode], updatedAt: new Date().toISOString() };
-        onUpdate(updated);
+        onUpdate(updated, `Adicionou sub-ideia: ${newNode.text}`);
         setSelectedNodeId(newNode.id);
         setEditingNodeId(newNode.id);
     };
@@ -248,7 +253,7 @@ function MindMapEditor({ map, onClose, onUpdate, sidebarMode, setSidebarMode }: 
             nodes: map.nodes.filter(n => !toDelete.includes(n.id)),
             updatedAt: new Date().toISOString()
         };
-        onUpdate(updated);
+        onUpdate(updated, `Excluiu ideia e seus ramos`);
         setSelectedNodeId('root');
     };
 
@@ -262,7 +267,7 @@ function MindMapEditor({ map, onClose, onUpdate, sidebarMode, setSidebarMode }: 
         };
         const updated = {
             ...map,
-            chatMessages: [...map.chatMessages, newMsg],
+            chatMessages: [...map.chatMessages, { ...newMsg, text: DOMPurify.sanitize(chatMsg) }],
             updatedAt: new Date().toISOString()
         };
         onUpdate(updated);
@@ -511,9 +516,9 @@ function MindMapEditor({ map, onClose, onUpdate, sidebarMode, setSidebarMode }: 
                                             };
                                             onUpdate({
                                                 ...map,
-                                                chatMessages: [...map.chatMessages, newMessage],
+                                                chatMessages: [...map.chatMessages, { ...newMessage, text: DOMPurify.sanitize(chatMsg) }],
                                                 updatedAt: new Date().toISOString()
-                                            });
+                                            }, `Enviou insight: ${DOMPurify.sanitize(chatMsg).substring(0, 20)}...`);
                                             setChatMsg("");
                                         }
                                     }}
